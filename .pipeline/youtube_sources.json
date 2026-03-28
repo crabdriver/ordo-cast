@@ -1,0 +1,22 @@
+{
+  "sources": [
+    {
+      "series_key": "human-manual",
+      "channel_url": "https://www.youtube.com/playlist?list=PLwUkfFsdDFqmbqFpcO1NR8cdqp0HhFpuO",
+      "download_mode": "audio_only_mp3",
+      "archive_file": ".pipeline/youtube_archive/human-manual.txt"
+    },
+    {
+      "series_key": "human-manual-qa",
+      "channel_url": "https://www.youtube.com/playlist?list=PLwUkfFsdDFqllxE2T7qkaLodYU1igH0kb",
+      "download_mode": "audio_only_mp3",
+      "archive_file": ".pipeline/youtube_archive/human-manual-qa.txt"
+    },
+    {
+      "series_key": "tiandi",
+      "channel_url": "https://www.youtube.com/playlist?list=PLwUkfFsdDFqkqU28gZ3he1VWIR5wgAC1E",
+      "download_mode": "audio_only_mp3",
+      "archive_file": ".pipeline/youtube_archive/tiandi.txt"
+    }
+  ]
+}

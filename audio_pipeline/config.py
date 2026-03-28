@@ -10,6 +10,11 @@ from typing import Iterable, List
 TITLE_CLEANUP_PATTERN = re.compile(r"[「」【】\[\]（）()<>《》]")
 WHITESPACE_PATTERN = re.compile(r"\s+")
 NUMERIC_PREFIX_PATTERN = re.compile(r"^\s*(\d+)")
+DEFAULT_AUDIO_DIRS = [
+    ("human-manual", "人类说明书", "/Users/wizard/Music/人类说明书"),
+    ("human-manual-qa", "人类说明书-问道", "/Users/wizard/Music/人类说明书-问道"),
+    ("tiandi", "天地大道", "/Users/wizard/Music/天地大道"),
+]
 
 
 @dataclass(frozen=True)

@@ -1,0 +1,2 @@
+.pipeline/logs/*.log
+.pipeline/youtube_archive/

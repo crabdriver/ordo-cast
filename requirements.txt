@@ -1,1 +1,4 @@
 openai
+oss2
+yt-dlp
+imageio-ffmpeg
