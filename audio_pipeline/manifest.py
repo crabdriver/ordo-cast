@@ -7,6 +7,8 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, List
 
+from .manifest_state import validate_transcription_status_transition
+
 
 class PipelineManifest:
     def __init__(self, path: Path) -> None:
@@ -51,6 +53,8 @@ class PipelineManifest:
 
     def upsert(self, source_id: str, values: Dict[str, Any]) -> Dict[str, Any]:
         current = self.entries.get(source_id, {}).copy()
+        if "status" in values:
+            validate_transcription_status_transition(current.get("status"), values.get("status"))
         current.update(values)
         current["updated_at"] = datetime.now(timezone.utc).isoformat()
         self.entries[source_id] = current
