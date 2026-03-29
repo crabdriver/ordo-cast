@@ -11,6 +11,14 @@ from scripts.split_to_wechat_articles import main
 
 
 class SplitToWechatArticlesScriptTests(unittest.TestCase):
+    def setUp(self) -> None:
+        # 避免本机 .env 中 EXPECTED_ARTICLES_PER_TRANSCRIPT 等影响退出码断言
+        self._dotenv_patcher = patch("dotenv.load_dotenv", lambda *_a, **_k: None)
+        self._dotenv_patcher.start()
+
+    def tearDown(self) -> None:
+        self._dotenv_patcher.stop()
+
     def _prepare_workspace(self, tmp: str, entry: dict) -> Path:
         workspace = Path(tmp)
         document_root = workspace / "文稿"
@@ -67,8 +75,16 @@ class SplitToWechatArticlesScriptTests(unittest.TestCase):
             )
             captured = {}
 
-            def fake_generate(*, client, prompt_path, issue_number, transcript_text, principles_text):
-                del client, prompt_path, transcript_text
+            def fake_generate(
+                *,
+                client,
+                prompt_path,
+                issue_number,
+                transcript_text,
+                principles_text,
+                expected_article_count=None,
+            ):
+                del client, prompt_path, transcript_text, expected_article_count
                 captured["issue_number"] = issue_number
                 captured["principles_text"] = principles_text
                 return [ArticleDraft(title="关系底牌", body="正文")]
@@ -78,9 +94,13 @@ class SplitToWechatArticlesScriptTests(unittest.TestCase):
                 {
                     "DOCUMENT_ROOT": str(workspace / "文稿"),
                     "ARTICLE_PRINCIPLES_PATH": str(workspace / "文稿" / "本地配置" / "文章拆解核心原则与心法.md"),
+                    "EXPECTED_ARTICLES_PER_TRANSCRIPT": "",
                 },
                 clear=False,
-            ), patch("sys.argv", ["split_to_wechat_articles.py", "--workspace-root", str(workspace)]), patch(
+            ), patch(
+                "sys.argv",
+                ["split_to_wechat_articles.py", "--workspace-root", str(workspace), "--allow-pending-review"],
+            ), patch(
                 "scripts.split_to_wechat_articles.build_text_client_from_env",
                 return_value=object(),
             ), patch("scripts.split_to_wechat_articles.llm_generate_articles", side_effect=fake_generate):
@@ -156,7 +176,7 @@ class SplitToWechatArticlesScriptTests(unittest.TestCase):
                     "transcript_path": str(Path(tmp) / "文稿" / "录音稿" / "天地大道" / "03_关系底牌.md"),
                     "article_status": "completed",
                     "article_paths": [str(existing_path), str(missing_path)],
-                    "review_status": "pending",
+                    "review_status": "reviewed",
                 },
             )
 
@@ -165,6 +185,7 @@ class SplitToWechatArticlesScriptTests(unittest.TestCase):
                 {
                     "DOCUMENT_ROOT": str(workspace / "文稿"),
                     "ARTICLE_PRINCIPLES_PATH": str(workspace / "文稿" / "本地配置" / "文章拆解核心原则与心法.md"),
+                    "EXPECTED_ARTICLES_PER_TRANSCRIPT": "",
                 },
                 clear=False,
             ), patch("sys.argv", ["split_to_wechat_articles.py", "--workspace-root", str(workspace)]), patch(
@@ -179,6 +200,54 @@ class SplitToWechatArticlesScriptTests(unittest.TestCase):
             entry = manifest.get("tiandi/关系底牌")
             self.assertEqual(entry["article_status"], "failed")
             self.assertIn("部分文章文件已存在", entry["article_error"])
+
+    def test_main_fails_when_article_count_mismatch_with_expected(self) -> None:
+        with TemporaryDirectory() as tmp:
+            workspace = self._prepare_workspace(
+                tmp,
+                {
+                    "status": "completed",
+                    "series_key": "tiandi",
+                    "source_name": "20260328. 关系底牌 [abc123].mp3",
+                    "sequence": 3,
+                    "display_title": "关系底牌",
+                    "transcript_path": str(Path(tmp) / "文稿" / "录音稿" / "天地大道" / "03_关系底牌.md"),
+                    "article_status": "pending",
+                    "article_paths": [],
+                    "review_status": "reviewed",
+                },
+            )
+
+            def fake_generate(*, client, prompt_path, issue_number, transcript_text, principles_text, expected_article_count=None):
+                del client, prompt_path, transcript_text, principles_text, expected_article_count
+                return [ArticleDraft(title="仅一篇", body="正文")]
+
+            with patch.dict(
+                os.environ,
+                {
+                    "DOCUMENT_ROOT": str(workspace / "文稿"),
+                    "ARTICLE_PRINCIPLES_PATH": str(workspace / "文稿" / "本地配置" / "文章拆解核心原则与心法.md"),
+                },
+                clear=False,
+            ), patch(
+                "sys.argv",
+                [
+                    "split_to_wechat_articles.py",
+                    "--workspace-root",
+                    str(workspace),
+                    "--expected-articles",
+                    "14",
+                ],
+            ), patch(
+                "scripts.split_to_wechat_articles.build_text_client_from_env",
+                return_value=object(),
+            ), patch("scripts.split_to_wechat_articles.llm_generate_articles", side_effect=fake_generate):
+                exit_code = main()
+
+            self.assertEqual(exit_code, 2)
+            manifest = PipelineManifest(workspace / ".pipeline" / "manifest.json")
+            manifest.load()
+            self.assertEqual(manifest.get("tiandi/关系底牌")["article_status"], "failed")
 
     def test_main_returns_nonzero_when_principles_file_missing(self) -> None:
         with TemporaryDirectory() as tmp:

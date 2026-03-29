@@ -29,6 +29,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--series", help="只处理指定系列 key，多个用逗号分隔")
     parser.add_argument("--skip-download", action="store_true", help="跳过 YouTube 下载阶段")
     parser.add_argument("--skip-split", action="store_true", help="跳过自动拆稿阶段")
+    parser.add_argument(
+        "--allow-pending-review",
+        action="store_true",
+        help="拆稿阶段允许「待复核」长稿（传给 split_to_wechat_articles）",
+    )
+    parser.add_argument(
+        "--expected-articles",
+        type=int,
+        default=None,
+        metavar="N",
+        help="拆稿输出必须恰好 N 篇（传给 split_to_wechat_articles；也可在 .env 设 EXPECTED_ARTICLES_PER_TRANSCRIPT）",
+    )
     return parser.parse_args()
 
 
@@ -86,16 +98,18 @@ def main() -> int:
             ],
         )
         if not args.skip_split:
-            run_step(
-                "公众号拆稿",
-                [
-                    python,
-                    "scripts/split_to_wechat_articles.py",
-                    "--workspace-root",
-                    workspace_root,
-                    *(["--series", args.series] if args.series else []),
-                ],
-            )
+            split_cmd = [
+                python,
+                "scripts/split_to_wechat_articles.py",
+                "--workspace-root",
+                workspace_root,
+                *(["--series", args.series] if args.series else []),
+            ]
+            if args.allow_pending_review:
+                split_cmd.append("--allow-pending-review")
+            if args.expected_articles is not None:
+                split_cmd.extend(["--expected-articles", str(args.expected_articles)])
+            run_step("公众号拆稿", split_cmd)
     except CalledProcessError as exc:
         return exc.returncode if exc.returncode else 1
     return 0

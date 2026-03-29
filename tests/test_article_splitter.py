@@ -12,13 +12,36 @@ from audio_pipeline.article_splitter import (
 
 
 class ArticleSplitterTests(unittest.TestCase):
-    def test_should_generate_articles_defaults_to_full_auto_when_review_pending(self) -> None:
+    def test_should_generate_articles_skips_when_review_pending_and_not_allowed(self) -> None:
+        self.assertFalse(
+            should_generate_articles(
+                {
+                    "status": "completed",
+                    "article_status": "pending",
+                    "review_status": "pending",
+                },
+                allow_pending_review=False,
+            )
+        )
+
+    def test_should_generate_articles_when_review_pending_if_allowed(self) -> None:
         self.assertTrue(
             should_generate_articles(
                 {
                     "status": "completed",
                     "article_status": "pending",
                     "review_status": "pending",
+                },
+                allow_pending_review=True,
+            )
+        )
+
+    def test_should_generate_articles_when_review_status_missing(self) -> None:
+        self.assertTrue(
+            should_generate_articles(
+                {
+                    "status": "completed",
+                    "article_status": "pending",
                 },
                 allow_pending_review=False,
             )

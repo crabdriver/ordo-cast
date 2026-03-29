@@ -58,10 +58,12 @@ def inspect_article_output_state(entry: dict) -> str:
 
 
 def should_generate_articles(entry: dict, *, allow_pending_review: bool) -> bool:
-    _ = allow_pending_review  # CLI 保留兼容；当前策略为默认全自动，不依赖人工复核前置
     if entry.get("status") != "completed":
         return False
     if inspect_article_output_state(entry) == "all_present":
+        return False
+    review = entry.get("review_status")
+    if review == "pending" and not allow_pending_review:
         return False
     return True
 

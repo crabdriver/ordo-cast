@@ -45,6 +45,15 @@ def llm_cleanup_transcript(
     return result or scrub_transcript_text(raw_transcript)
 
 
+def _expected_articles_constraint(expected_article_count: int | None) -> str:
+    if expected_article_count is None or expected_article_count < 1:
+        return ""
+    return (
+        f"【硬性要求】你必须恰好输出 {expected_article_count} 篇文章"
+        f"（JSON 中 articles 数组长度必须等于 {expected_article_count}）。\n\n"
+    )
+
+
 def llm_generate_articles(
     *,
     client: OpenAICompatibleTextClient,
@@ -52,6 +61,7 @@ def llm_generate_articles(
     issue_number: str,
     transcript_text: str,
     principles_text: str = "",
+    expected_article_count: int | None = None,
 ) -> List[ArticleDraft]:
     prompt = client.render_prompt(
         prompt_path,
@@ -59,6 +69,7 @@ def llm_generate_articles(
             "issue_number": issue_number,
             "transcript_text": transcript_text,
             "principles_text": principles_text,
+            "expected_articles_constraint": _expected_articles_constraint(expected_article_count),
         },
     )
     payload = client.complete_text(system_prompt=ARTICLE_SYSTEM_PROMPT, user_prompt=prompt)

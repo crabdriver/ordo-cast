@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 import sys
 
@@ -35,9 +36,35 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--allow-pending-review",
         action="store_true",
-        help="兼容旧参数；当前脚本默认全自动拆稿，不再依赖人工复核前置",
+        help="长稿在 manifest 中仍为「待复核」(review_status=pending) 时也拆稿；默认跳过待复核条目",
+    )
+    parser.add_argument(
+        "--expected-articles",
+        type=int,
+        default=None,
+        metavar="N",
+        help="拆稿输出篇数必须恰好为 N（与 LLM 返回的 articles 数量一致）；"
+        "未传参时可读环境变量 EXPECTED_ARTICLES_PER_TRANSCRIPT",
     )
     return parser.parse_args()
+
+
+def resolve_expected_article_count(args: argparse.Namespace) -> int | None:
+    if args.expected_articles is not None:
+        if args.expected_articles < 1:
+            print("错误：--expected-articles 必须为正整数。", file=sys.stderr)
+            raise SystemExit(2)
+        return args.expected_articles
+    raw = os.environ.get("EXPECTED_ARTICLES_PER_TRANSCRIPT", "").strip()
+    if not raw:
+        return None
+    try:
+        n = int(raw)
+    except ValueError:
+        return None
+    if n < 1:
+        return None
+    return n
 
 
 def extract_transcript_body(transcript_text: str) -> str:
@@ -51,6 +78,7 @@ def main() -> int:
     from dotenv import load_dotenv
     load_dotenv(ROOT / ".env")
     args = parse_args()
+    expected_article_count = resolve_expected_article_count(args)
     workspace_root = Path(args.workspace_root).resolve()
     paths = PipelinePaths.from_workspace(workspace_root)
     manifest = PipelineManifest(paths.manifest_path)
@@ -149,7 +177,12 @@ def main() -> int:
                 issue_number=issue_number,
                 transcript_text=transcript_text,
                 principles_text=principles_text,
+                expected_article_count=expected_article_count,
             )
+            if expected_article_count is not None and len(drafts) != expected_article_count:
+                raise RuntimeError(
+                    f"拆稿篇数 {len(drafts)} 与要求 {expected_article_count} 不一致，未写入文件。"
+                )
             series = series_index[entry["series_key"]]
             output_dir = resolve_article_output_dir(
                 paths.article_dir,

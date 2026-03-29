@@ -90,6 +90,11 @@ python3 scripts/normalize_transcript.py --series tiandi
 python3 scripts/split_to_wechat_articles.py --series tiandi
 ```
 
+拆稿行为说明：
+
+- **待复核**：manifest 中 `review_status=pending` 时，默认**跳过**拆稿；若要对未复核长稿拆稿，请加 `--allow-pending-review`（全链路 `run_full_pipeline.py` 亦支持同名参数）。
+- **固定篇数**：需要每期恰好拆成 14 篇时，可在 `.env` 设置 `EXPECTED_ARTICLES_PER_TRANSCRIPT=14`，或运行 `split_to_wechat_articles.py --expected-articles 14`。篇数与模型输出不一致时会报错且**不写入**文章文件。
+
 一条命令跑完整链路：
 
 ```bash
