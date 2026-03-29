@@ -12,11 +12,19 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+# summary / latest_status 与 events.jsonl 不同步时最多滞后该条数（仍保证 finish 时写全）
+_STATUS_FLUSH_EVERY = 10
+
+
 @dataclass
 class PipelineTaskLogger:
+    """events.jsonl 仍逐条追加；summary / latest_status 按批次落盘以降低 IO。"""
+
     workspace_root: Path
     module: str
     run_id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
+    _events_since_flush: int = field(default=0, init=False, repr=False)
+    _last_event_for_status: dict[str, Any] | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
         self.logs_dir = self.workspace_root / ".pipeline" / "logs"
@@ -62,13 +70,18 @@ class PipelineTaskLogger:
         with self.events_path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(event, ensure_ascii=False) + "\n")
         self.event_counts[f"{stage}.{status}"] = self.event_counts.get(f"{stage}.{status}", 0) + 1
-        self._write_summary(status="running", message=message, last_event=event)
-        self._write_latest_status(status="running", message=message, last_event=event)
+        self._last_event_for_status = event
+        self._events_since_flush += 1
+        if self._events_since_flush >= _STATUS_FLUSH_EVERY:
+            self._write_summary(status="running", message=message, last_event=event)
+            self._write_latest_status(status="running", message=message, last_event=event)
+            self._events_since_flush = 0
 
     def finish(self, *, status: str, message: str | None = None) -> None:
         finished_at = _utc_now()
-        self._write_summary(status=status, message=message, finished_at=finished_at)
-        self._write_latest_status(status=status, message=message, finished_at=finished_at)
+        last = self._last_event_for_status
+        self._write_summary(status=status, message=message, finished_at=finished_at, last_event=last)
+        self._write_latest_status(status=status, message=message, finished_at=finished_at, last_event=last)
 
     def _ensure_dirs(self) -> None:
         self.runs_dir.mkdir(parents=True, exist_ok=True)

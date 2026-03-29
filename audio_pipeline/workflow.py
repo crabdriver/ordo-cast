@@ -11,7 +11,7 @@ from .manifest import PipelineManifest
 from .normalization import compute_text_checksum, format_transcript_markdown, scrub_transcript_text
 from .scanner import AudioSource, scan_audio_sources
 from .task_logging import PipelineTaskLogger
-from .transcription import TRANSIENT_ERROR_KEYWORDS, AbstractTranscriptionProvider
+from .transcription import TRANSIENT_ERROR_KEYWORDS, AbstractTranscriptionProvider, TranscriptionJobState
 
 
 class BatchTranscriptionWorkflow:
@@ -170,110 +170,129 @@ class BatchTranscriptionWorkflow:
 
     def _poll_if_needed(self, source: AudioSource) -> None:
         current = self.manifest.get(source.source_id)
-        if not current.get("job_id"):
+        if not self._poll_should_run(current):
             return
-        if current.get("status") == "completed":
-            return
-        if self._is_waiting_for_retry(current):
-            return
-
         try:
             state = self.provider.poll(current["job_id"])
         except Exception as exc:  # pragma: no cover - network failure path
-            update = {
-                "status": current.get("status", "submitted") or "submitted",
-                "error_message": str(exc),
-            }
-            if self._is_rate_limit_error(exc):
-                update["next_retry_at"] = self._next_retry_timestamp()
-            self.manifest.upsert(source.source_id, update)
-            self._log_event(source.source_id, "poll_error", str(exc))
-            self._log_task(stage="poll_transcript", status="retry_pending" if update.get("next_retry_at") else "error", message=str(exc), source=source)
+            self._handle_poll_provider_exception(source, current, exc)
             return
         if state.status == "completed" and state.text is not None:
-            try:
-                raw_path = Path(current["raw_transcript_path"])
-                raw_path.parent.mkdir(parents=True, exist_ok=True)
-                raw_path.write_text(state.text, encoding="utf-8")
-
-                cleaned = scrub_transcript_text(state.text)
-                markdown = format_transcript_markdown(
-                    series_name=source.series.display_name,
-                    source_name=source.source_path.name,
-                    cleaned_text=cleaned,
-                    reviewed=False,
-                )
-                source.transcript_path.parent.mkdir(parents=True, exist_ok=True)
-                source.transcript_path.write_text(markdown, encoding="utf-8")
-                self.manifest.upsert(
-                    source.source_id,
-                    {
-                        "status": "completed",
-                        "raw_transcript_path": str(raw_path),
-                        "transcript_path": str(source.transcript_path),
-                        "article_status": "pending",
-                        "review_status": "pending",
-                        "title_key": source.title_key,
-                        "display_title": source.title,
-                        "audio_sha1": current.get("audio_sha1"),
-                        "submitted_audio_sha1": current.get("submitted_audio_sha1") or current.get("audio_sha1"),
-                        "transcript_checksum": compute_text_checksum(markdown),
-                        "error_message": None,
-                        "next_retry_at": None,
-                    },
-                )
-                self._log_event(source.source_id, "completed", str(source.transcript_path))
-                self._log_task(
-                    stage="transcript_completed",
-                    status="success",
-                    message="已生成转录稿",
-                    source=source,
-                    transcript_path=str(source.transcript_path),
-                    job_id=current.get("job_id"),
-                )
-            except Exception as exc:
-                self.manifest.upsert(
-                    source.source_id,
-                    {
-                        "status": "failed",
-                        "job_id": None,
-                        "retry_count": int(current.get("retry_count", 0)) + 1,
-                        "error_message": str(exc),
-                    },
-                )
-                self._log_event(source.source_id, "failed", str(exc))
-                self._log_task(stage="transcript_completed", status="failed", message=str(exc), source=source)
+            self._handle_poll_completed_with_text(source, current, state)
             return
-
         if state.status == "error":
-            retries = int(current.get("retry_count", 0)) + 1
-            if self._is_rate_limit_error(state.error_message):
-                self.manifest.upsert(
-                    source.source_id,
-                    {
-                        "status": current.get("status", "submitted") or "submitted",
-                        "error_message": state.error_message,
-                        "next_retry_at": self._next_retry_timestamp(),
-                    },
-                )
-                self._log_event(source.source_id, "poll_error", state.error_message or "触发限流")
-                self._log_task(stage="poll_transcript", status="retry_pending", message=state.error_message or "触发限流", source=source)
-                return
-            status = "failed" if retries >= self.max_retries else "retry_pending"
+            self._handle_poll_job_error(source, current, state)
+            return
+        self._handle_poll_still_running(source, current, state)
+
+    def _poll_should_run(self, current: dict) -> bool:
+        if not current.get("job_id"):
+            return False
+        if current.get("status") == "completed":
+            return False
+        if self._is_waiting_for_retry(current):
+            return False
+        return True
+
+    def _handle_poll_provider_exception(self, source: AudioSource, current: dict, exc: Exception) -> None:
+        update = {
+            "status": current.get("status", "submitted") or "submitted",
+            "error_message": str(exc),
+        }
+        if self._is_rate_limit_error(exc):
+            update["next_retry_at"] = self._next_retry_timestamp()
+        self.manifest.upsert(source.source_id, update)
+        self._log_event(source.source_id, "poll_error", str(exc))
+        self._log_task(
+            stage="poll_transcript",
+            status="retry_pending" if update.get("next_retry_at") else "error",
+            message=str(exc),
+            source=source,
+        )
+
+    def _handle_poll_completed_with_text(self, source: AudioSource, current: dict, state: TranscriptionJobState) -> None:
+        try:
+            raw_path = Path(current["raw_transcript_path"])
+            raw_path.parent.mkdir(parents=True, exist_ok=True)
+            raw_path.write_text(state.text or "", encoding="utf-8")
+
+            cleaned = scrub_transcript_text(state.text or "")
+            markdown = format_transcript_markdown(
+                series_name=source.series.display_name,
+                source_name=source.source_path.name,
+                cleaned_text=cleaned,
+                reviewed=False,
+            )
+            source.transcript_path.parent.mkdir(parents=True, exist_ok=True)
+            source.transcript_path.write_text(markdown, encoding="utf-8")
             self.manifest.upsert(
                 source.source_id,
                 {
-                    "status": status,
-                    "job_id": None,
-                    "retry_count": retries,
-                    "error_message": state.error_message,
+                    "status": "completed",
+                    "raw_transcript_path": str(raw_path),
+                    "transcript_path": str(source.transcript_path),
+                    "article_status": "pending",
+                    "review_status": "pending",
+                    "title_key": source.title_key,
+                    "display_title": source.title,
+                    "audio_sha1": current.get("audio_sha1"),
+                    "submitted_audio_sha1": current.get("submitted_audio_sha1") or current.get("audio_sha1"),
+                    "transcript_checksum": compute_text_checksum(markdown),
+                    "error_message": None,
                     "next_retry_at": None,
                 },
             )
-            self._log_event(source.source_id, status, state.error_message or "转录失败")
-            self._log_task(stage="poll_transcript", status=status, message=state.error_message or "转录失败", source=source)
-            return
+            self._log_event(source.source_id, "completed", str(source.transcript_path))
+            self._log_task(
+                stage="transcript_completed",
+                status="success",
+                message="已生成转录稿",
+                source=source,
+                transcript_path=str(source.transcript_path),
+                job_id=current.get("job_id"),
+            )
+        except Exception as exc:
+            self.manifest.upsert(
+                source.source_id,
+                {
+                    "status": "failed",
+                    "job_id": None,
+                    "retry_count": int(current.get("retry_count", 0)) + 1,
+                    "error_message": str(exc),
+                },
+            )
+            self._log_event(source.source_id, "failed", str(exc))
+            self._log_task(stage="transcript_completed", status="failed", message=str(exc), source=source)
 
+    def _handle_poll_job_error(self, source: AudioSource, current: dict, state: TranscriptionJobState) -> None:
+        retries = int(current.get("retry_count", 0)) + 1
+        if self._is_rate_limit_error(state.error_message):
+            self.manifest.upsert(
+                source.source_id,
+                {
+                    "status": current.get("status", "submitted") or "submitted",
+                    "error_message": state.error_message,
+                    "next_retry_at": self._next_retry_timestamp(),
+                },
+            )
+            self._log_event(source.source_id, "poll_error", state.error_message or "触发限流")
+            self._log_task(stage="poll_transcript", status="retry_pending", message=state.error_message or "触发限流", source=source)
+            return
+        status = "failed" if retries >= self.max_retries else "retry_pending"
+        self.manifest.upsert(
+            source.source_id,
+            {
+                "status": status,
+                "job_id": None,
+                "retry_count": retries,
+                "error_message": state.error_message,
+                "next_retry_at": None,
+            },
+        )
+        self._log_event(source.source_id, status, state.error_message or "转录失败")
+        self._log_task(stage="poll_transcript", status=status, message=state.error_message or "转录失败", source=source)
+
+    def _handle_poll_still_running(self, source: AudioSource, current: dict, state: TranscriptionJobState) -> None:
         self.manifest.upsert(
             source.source_id,
             {

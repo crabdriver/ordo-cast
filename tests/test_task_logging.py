@@ -3,6 +3,7 @@ from tempfile import TemporaryDirectory
 import json
 import unittest
 
+from audio_pipeline import task_logging as task_logging_module
 from audio_pipeline.task_logging import PipelineTaskLogger
 
 
@@ -50,6 +51,27 @@ class PipelineTaskLoggerTests(unittest.TestCase):
             self.assertEqual(summary["module"], "download")
             self.assertEqual(summary["event_counts"]["scan.success"], 1)
             self.assertEqual(summary["event_counts"]["download.success"], 1)
+
+    def test_logger_flushes_summary_every_n_events_before_finish(self) -> None:
+        with TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            logger = PipelineTaskLogger(workspace_root=workspace, module="batch")
+            summary_path = workspace / ".pipeline" / "logs" / "runs" / f"{logger.run_id}.summary.json"
+            n = task_logging_module._STATUS_FLUSH_EVERY
+            for i in range(n):
+                logger.log_event(stage="tick", status="ok", message=str(i))
+            mid = json.loads(summary_path.read_text(encoding="utf-8"))
+            self.assertEqual(mid["event_counts"].get("tick.ok"), n)
+            self.assertEqual(mid["status"], "running")
+
+            logger.log_event(stage="tick", status="ok", message="extra")
+            mid2 = json.loads(summary_path.read_text(encoding="utf-8"))
+            self.assertEqual(mid2["event_counts"].get("tick.ok"), n)
+
+            logger.finish(status="success", message="done")
+            final = json.loads(summary_path.read_text(encoding="utf-8"))
+            self.assertEqual(final["event_counts"].get("tick.ok"), n + 1)
+            self.assertEqual(final["status"], "success")
 
 
 if __name__ == "__main__":

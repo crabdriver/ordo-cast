@@ -144,6 +144,10 @@ class YouTubeBatchDownloader:
                 self._log(f"[error] {series.key}: 下载失败，退出码 {exc.returncode}")
                 results[series.key] = "failed"
                 continue
+            except OSError as exc:
+                self._log(f"[error] {series.key}: 文件系统错误 {exc}")
+                results[series.key] = "failed"
+                continue
             results[series.key] = status
         return results
 

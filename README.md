@@ -119,6 +119,10 @@ python3 scripts/migrate_open_source_layout.py --workspace-root .
 
 若仓库托管在 GitHub 并已启用 Actions，推送到 `master` / `main` 或打开针对这些分支的 PR 时，会在 Python 3.10、3.11、3.12 下自动运行 `python -m unittest discover -s tests`。
 
+## 变更记录
+
+见仓库根目录 [`CHANGELOG.md`](CHANGELOG.md)。
+
 ## 验证建议
 
 1. 先只跑一个系列，确认新文件已经落到 `文稿/` 下。

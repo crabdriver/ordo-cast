@@ -126,10 +126,10 @@
 
 ### 4.8 P2 聚合（在阶段 3 处理）
 
-- 抽取重复：`TRANSIENT_ERROR_KEYWORDS`、`strip_json_code_fence`、`filter_series` 到 `audio_pipeline` 或 `scripts/_common.py`。
-- `youtube_downloader` 导入风格与 `sync_many` 异常范围收窄/补全。
-- `task_logging`：可选批量写 summary（若改动大则记为后续迭代）。
-- `article_splitter`：`allow_pending_review` 要么实现要么从 API 移除。
+- 抽取重复：`TRANSIENT_ERROR_KEYWORDS`、`strip_json_code_fence`、`filter_series` 已部分落在 `audio_pipeline`（如 `json_utils`、`cli_support`）。
+- `youtube_downloader`：`sync_many` 已补充 `OSError` 处理（磁盘/重命名等）。
+- `task_logging`：已实现 summary / latest 按批次写盘（每 10 条事件），`finish` 强制落盘。
+- `article_splitter`：`allow_pending_review` 已实现语义（待复核默认跳过拆稿）。
 
 ---
 
