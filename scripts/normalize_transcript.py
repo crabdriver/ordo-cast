@@ -18,6 +18,7 @@ from audio_pipeline.normalization import (
     format_transcript_markdown,
     should_skip_normalization,
 )
+from audio_pipeline.task_logging import PipelineTaskLogger
 
 
 def parse_args() -> argparse.Namespace:
@@ -28,11 +29,14 @@ def parse_args() -> argparse.Namespace:
         help="项目根目录，默认是当前仓库根目录",
     )
     parser.add_argument("--source-id", default=None, help="只处理指定 source_id")
+    parser.add_argument("--series", help="只处理指定系列 key，多个用逗号分隔")
     parser.add_argument("--force", action="store_true", help="即使已人工复核也强制重写长稿")
     return parser.parse_args()
 
 
 def main() -> int:
+    from dotenv import load_dotenv
+    load_dotenv(ROOT / ".env")
     args = parse_args()
     workspace_root = Path(args.workspace_root).resolve()
     paths = PipelinePaths.from_workspace(workspace_root)
@@ -40,10 +44,20 @@ def main() -> int:
     manifest.load()
     series_index = {series.key: series for series in load_series_map(paths.series_map_path)}
     client = build_text_client_from_env()
+    if client is None:
+        print(
+            "提示：未配置 CONTENT_LLM_API_KEY / CONTENT_LLM_BASE_URL / CONTENT_LLM_MODEL，将仅使用规则清洗（无 LLM 润色）。",
+            flush=True,
+        )
     prompt_path = paths.prompts_dir / "clean_transcript.md"
+    selected_series = {item.strip() for item in (args.series or "").split(",") if item.strip()}
+    logger = PipelineTaskLogger(workspace_root=workspace_root, module="normalize")
+    failure_count = 0
 
     for source_id, entry in manifest.entries.items():
         if args.source_id and source_id != args.source_id:
+            continue
+        if selected_series and entry.get("series_key") not in selected_series:
             continue
         raw_path = Path(entry.get("raw_transcript_path", ""))
         transcript_path = Path(entry.get("transcript_path", ""))
@@ -58,6 +72,15 @@ def main() -> int:
                         "normalization_status": entry.get("normalization_status", "skipped"),
                         "normalization_error": None,
                     },
+                )
+                logger.log_event(
+                    stage="normalize_transcript",
+                    status="skipped",
+                    message="检测到人工修改或已完成规范化，跳过",
+                    series_key=entry.get("series_key"),
+                    title_key=entry.get("title_key"),
+                    display_title=entry.get("display_title"),
+                    transcript_path=str(transcript_path),
                 )
                 continue
             series = series_index[entry["series_key"]]
@@ -81,6 +104,15 @@ def main() -> int:
             update["transcript_path"] = str(transcript_path)
             update["transcript_checksum"] = compute_text_checksum(markdown)
             manifest.upsert(source_id, update)
+            logger.log_event(
+                stage="normalize_transcript",
+                status="success",
+                message="已完成长稿规范化",
+                series_key=entry.get("series_key"),
+                title_key=entry.get("title_key"),
+                display_title=entry.get("display_title"),
+                transcript_path=str(transcript_path),
+            )
         except Exception as exc:
             manifest.upsert(
                 source_id,
@@ -89,9 +121,23 @@ def main() -> int:
                     "normalization_error": str(exc),
                 },
             )
+            logger.log_event(
+                stage="normalize_transcript",
+                status="failed",
+                message=str(exc),
+                series_key=entry.get("series_key"),
+                title_key=entry.get("title_key"),
+                display_title=entry.get("display_title"),
+                transcript_path=str(transcript_path),
+            )
+            failure_count += 1
 
     manifest.save()
-    return 0
+    logger.finish(
+        status="failed" if failure_count else "success",
+        message=f"规范化结束，失败 {failure_count} 条",
+    )
+    return 2 if failure_count else 0
 
 
 if __name__ == "__main__":

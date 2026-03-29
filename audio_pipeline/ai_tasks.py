@@ -51,12 +51,14 @@ def llm_generate_articles(
     prompt_path: Path,
     issue_number: str,
     transcript_text: str,
+    principles_text: str = "",
 ) -> List[ArticleDraft]:
     prompt = client.render_prompt(
         prompt_path,
         {
             "issue_number": issue_number,
             "transcript_text": transcript_text,
+            "principles_text": principles_text,
         },
     )
     payload = client.complete_text(system_prompt=ARTICLE_SYSTEM_PROMPT, user_prompt=prompt)

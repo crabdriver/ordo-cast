@@ -1,15 +1,41 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
 import json
+import os
 from pathlib import Path
 import re
-from typing import Iterable, List
+from typing import Callable, Iterable, List
 
 
 TITLE_CLEANUP_PATTERN = re.compile(r"[「」【】\[\]（）()<>《》]")
 WHITESPACE_PATTERN = re.compile(r"\s+")
 NUMERIC_PREFIX_PATTERN = re.compile(r"^\s*(\d+)")
+YOUTUBE_ID_SUFFIX_PATTERN = re.compile(r"\s+\[[^\]]+\]$")
+TITLE_KEY_FILTER_PATTERN = re.compile(r"[^\w]+", re.UNICODE)
+LEADING_SEPARATOR_PATTERN = re.compile(r"^[\s\.\-_、·:：]+")
+DOCUMENT_ROOT_ENV = "DOCUMENT_ROOT"
+ARTICLE_PRINCIPLES_PATH_ENV = "ARTICLE_PRINCIPLES_PATH"
+DEFAULT_DOCUMENT_ROOT_NAME = "文稿"
+DEFAULT_ARTICLE_PRINCIPLES_DIRNAME = "本地配置"
+DEFAULT_ARTICLE_PRINCIPLES_FILENAME = "文章拆解核心原则与心法.md"
+SERIES_MAP_EXAMPLE_FILENAME = "series_map.example.json"
+YOUTUBE_SOURCES_EXAMPLE_FILENAME = "youtube_sources.example.json"
+DEFAULT_AUDIO_DIRS = [
+    ("example-series", "示例栏目", "${HOME}/Music/示例栏目"),
+]
+SERIES_TITLE_PREFIXES = {
+    "tiandi": ("天地大道",),
+    "human-manual": ("人类说明书", "人類說明書"),
+    "human-manual-qa": ("人类说明书问道", "人類說明書問道", "点亮星空问道", "點亮星空問道"),
+}
+
+
+@dataclass(frozen=True)
+class TitleIdentity:
+    display_title: str
+    title_key: str
 
 
 @dataclass(frozen=True)
@@ -19,11 +45,13 @@ class SeriesDefinition:
     audio_dir: Path
     transcript_dir: Path
     prefix_width: int = 2
+    title_prefixes: tuple[str, ...] = ()
 
-    def build_transcript_path(self, source_name: str) -> Path:
-        sequence = extract_numeric_prefix(source_name) or 0
-        title = strip_audio_prefix(source_name)
-        safe_title = sanitize_title(title)
+    def build_title_identity(self, source_name: str) -> TitleIdentity:
+        return build_title_identity(self.key, self.display_name, source_name, self.title_prefixes)
+
+    def build_transcript_path(self, sequence: int, display_title: str) -> Path:
+        safe_title = sanitize_title(display_title)
         return self.transcript_dir / f"{sequence:0{self.prefix_width}d}_{safe_title}.md"
 
 
@@ -38,11 +66,12 @@ class PipelinePaths:
 
     @classmethod
     def from_workspace(cls, workspace_root: Path) -> "PipelinePaths":
+        document_root = resolve_document_root()
         return cls(
             workspace_root=workspace_root,
             manifest_path=workspace_root / ".pipeline" / "manifest.json",
             raw_transcript_dir=workspace_root / ".pipeline" / "raw_transcripts",
-            article_dir=workspace_root / "拆解后文章",
+            article_dir=document_root / "拆解文章",
             prompts_dir=workspace_root / "prompts",
             series_map_path=workspace_root / ".pipeline" / "series_map.json",
         )
@@ -53,8 +82,19 @@ def extract_numeric_prefix(name: str) -> int | None:
     return int(match.group(1)) if match else None
 
 
+def extract_sequence_prefix(name: str) -> int | None:
+    match = NUMERIC_PREFIX_PATTERN.match(name)
+    if not match:
+        return None
+    prefix = match.group(1)
+    if len(prefix) == 8 and prefix.startswith("20"):
+        return None
+    return int(prefix)
+
+
 def strip_audio_prefix(source_name: str) -> str:
     stem = Path(source_name).stem
+    stem = YOUTUBE_ID_SUFFIX_PATTERN.sub("", stem)
     stem = re.sub(r"^\s*\d+\s*[\.\-_、]*\s*", "", stem)
     stem = TITLE_CLEANUP_PATTERN.sub("", stem)
     stem = stem.replace("·", "")
@@ -72,17 +112,66 @@ def sanitize_title(title: str) -> str:
     return sanitized
 
 
+def resolve_document_root() -> Path:
+    configured = os.getenv(DOCUMENT_ROOT_ENV, "").strip()
+    if configured:
+        return _expand_environment_path(configured)
+    return Path.home() / DEFAULT_DOCUMENT_ROOT_NAME
+
+
+def resolve_article_principles_path(document_root: Path | None = None) -> Path:
+    configured = os.getenv(ARTICLE_PRINCIPLES_PATH_ENV, "").strip()
+    if configured:
+        return _expand_environment_path(configured)
+    root = document_root or resolve_document_root()
+    return root / DEFAULT_ARTICLE_PRINCIPLES_DIRNAME / DEFAULT_ARTICLE_PRINCIPLES_FILENAME
+
+
+def build_title_identity(
+    series_key: str,
+    display_name: str,
+    source_name: str,
+    title_prefixes: Iterable[str] = (),
+) -> TitleIdentity:
+    title = strip_audio_prefix(source_name)
+    title = _strip_series_prefix(title, series_key, display_name, title_prefixes)
+    display_title = sanitize_title(title) or "未命名转录稿"
+    title_key = build_title_key(display_title)
+    return TitleIdentity(display_title=display_title, title_key=title_key)
+
+
+def build_title_key(display_title: str) -> str:
+    normalized = TITLE_KEY_FILTER_PATTERN.sub("", display_title).lower()
+    if normalized:
+        return normalized
+    return hashlib.sha1(display_title.encode("utf-8")).hexdigest()[:16]
+
+
+def _strip_series_prefix(
+    title: str,
+    series_key: str,
+    display_name: str,
+    title_prefixes: Iterable[str] = (),
+) -> str:
+    prefixes = list(title_prefixes or SERIES_TITLE_PREFIXES.get(series_key, ()))
+    prefixes.append(sanitize_title(display_name).replace("-", ""))
+    prefixes = [sanitize_title(prefix).replace("-", "") for prefix in prefixes if prefix]
+    current = sanitize_title(title)
+    for prefix in sorted(set(prefixes), key=len, reverse=True):
+        if current.startswith(prefix):
+            current = current[len(prefix):]
+            current = LEADING_SEPARATOR_PATTERN.sub("", current)
+            break
+    return current or title
+
+
 def load_series_map(series_map_path: Path) -> List[SeriesDefinition]:
     data = json.loads(series_map_path.read_text(encoding="utf-8"))
     workspace_root = series_map_path.parent.parent
     series: List[SeriesDefinition] = []
     for item in data.get("series", []):
-        audio_dir = Path(item["audio_dir"])
-        transcript_dir = Path(item["transcript_dir"])
-        if not audio_dir.is_absolute():
-            audio_dir = workspace_root / audio_dir
-        if not transcript_dir.is_absolute():
-            transcript_dir = workspace_root / transcript_dir
+        audio_dir = _expand_path_value(item["audio_dir"], workspace_root)
+        transcript_dir = _expand_path_value(item["transcript_dir"], workspace_root)
         series.append(
             SeriesDefinition(
                 key=item["key"],
@@ -90,6 +179,7 @@ def load_series_map(series_map_path: Path) -> List[SeriesDefinition]:
                 audio_dir=audio_dir,
                 transcript_dir=transcript_dir,
                 prefix_width=item.get("prefix_width", 2),
+                title_prefixes=tuple(item.get("title_prefixes", [])),
             )
         )
     return series
@@ -100,6 +190,7 @@ def write_default_series_map(
     workspace_root: Path,
     series_audio_dirs: Iterable[tuple[str, str, str]],
 ) -> None:
+    del workspace_root
     payload = {"series": []}
     for key, display_name, audio_dir in series_audio_dirs:
         payload["series"].append(
@@ -107,8 +198,9 @@ def write_default_series_map(
                 "key": key,
                 "display_name": display_name,
                 "audio_dir": audio_dir,
-                "transcript_dir": display_name,
+                "transcript_dir": f"${{{DOCUMENT_ROOT_ENV}}}/录音稿/{display_name}",
                 "prefix_width": 2,
+                "title_prefixes": [display_name],
             }
         )
     series_map_path.parent.mkdir(parents=True, exist_ok=True)
@@ -116,4 +208,35 @@ def write_default_series_map(
         json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
+
+
+def ensure_local_config(real_path: Path, example_path: Path, writer: Callable[[Path], None]) -> bool:
+    if not example_path.exists():
+        writer(example_path)
+    if real_path.exists():
+        return False
+    real_path.parent.mkdir(parents=True, exist_ok=True)
+    real_path.write_text(example_path.read_text(encoding="utf-8"), encoding="utf-8")
+    return True
+
+
+def _expand_path_value(value: str, workspace_root: Path) -> Path:
+    document_root = resolve_document_root()
+    expanded = value.strip()
+    replacements = {
+        f"${{{DOCUMENT_ROOT_ENV}}}": str(document_root),
+        f"${DOCUMENT_ROOT_ENV}": str(document_root),
+        "${WORKSPACE_ROOT}": str(workspace_root),
+        "$WORKSPACE_ROOT": str(workspace_root),
+    }
+    for token, replacement in replacements.items():
+        expanded = expanded.replace(token, replacement)
+    expanded_path = _expand_environment_path(expanded)
+    if expanded_path.is_absolute():
+        return expanded_path
+    return workspace_root / expanded_path
+
+
+def _expand_environment_path(value: str) -> Path:
+    return Path(os.path.expanduser(os.path.expandvars(value.strip())))
 

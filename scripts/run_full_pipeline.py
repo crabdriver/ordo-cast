@@ -5,13 +5,18 @@ import argparse
 from pathlib import Path
 import subprocess
 import sys
-
+from subprocess import CalledProcessError
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def _load_env() -> None:
+    from dotenv import load_dotenv
+    load_dotenv(ROOT / ".env")
+
+
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="一条命令跑完整个转录与拆稿流水线")
+    parser = argparse.ArgumentParser(description="一条命令串联下载、转录、规范化与拆稿流水线")
     parser.add_argument(
         "--workspace-root",
         default=str(ROOT),
@@ -20,50 +25,79 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--poll-interval", type=int, default=15, help="转录轮询间隔秒数")
     parser.add_argument("--max-rounds", type=int, default=120, help="转录最大轮询轮次")
     parser.add_argument("--max-concurrency", type=int, default=3, help="并发提交转录任务数")
-    parser.add_argument("--wait", action="store_true", help="持续等待到转录任务结束")
-    parser.add_argument(
-        "--auto-split",
-        action="store_true",
-        help="转录长稿后直接跳过人工复核，继续自动拆成公众号文章",
-    )
+    parser.add_argument("--wait", action="store_true", help="兼容旧参数；总控默认会等待转录完成")
+    parser.add_argument("--series", help="只处理指定系列 key，多个用逗号分隔")
+    parser.add_argument("--skip-download", action="store_true", help="跳过 YouTube 下载阶段")
+    parser.add_argument("--skip-split", action="store_true", help="跳过自动拆稿阶段")
     return parser.parse_args()
 
 
-def run_step(command: list[str]) -> None:
-    subprocess.run(command, cwd=str(ROOT), check=True)
+def run_step(label: str, command: list[str]) -> None:
+    try:
+        subprocess.run(command, cwd=str(ROOT), check=True)
+    except CalledProcessError as exc:
+        print(f"步骤「{label}」失败，退出码 {exc.returncode}。")
+        raise
 
 
 def main() -> int:
+    _load_env()
     args = parse_args()
     workspace_root = args.workspace_root
     python = sys.executable
 
-    run_step(
-        [
-            python,
-            "scripts/transcribe_batch.py",
-            "--workspace-root",
-            workspace_root,
-            "--poll-interval",
-            str(args.poll_interval),
-            "--max-rounds",
-            str(args.max_rounds),
-            "--max-concurrency",
-            str(args.max_concurrency),
-            *(["--wait"] if args.wait else []),
-        ]
-    )
-    run_step([python, "scripts/normalize_transcript.py", "--workspace-root", workspace_root])
-    if args.auto_split:
+    try:
+        if not args.skip_download:
+            run_step(
+                "YouTube 下载",
+                [
+                    python,
+                    "scripts/download_youtube.py",
+                    "--workspace-root",
+                    workspace_root,
+                    *(["--series", args.series] if args.series else ["--all"]),
+                ],
+            )
         run_step(
+            "批量转录",
             [
                 python,
-                "scripts/split_to_wechat_articles.py",
+                "scripts/transcribe_batch.py",
                 "--workspace-root",
                 workspace_root,
-                "--allow-pending-review",
-            ]
+                "--poll-interval",
+                str(args.poll_interval),
+                "--max-rounds",
+                str(args.max_rounds),
+                "--max-concurrency",
+                str(args.max_concurrency),
+                *(["--series", args.series] if args.series else []),
+                "--wait",
+            ],
         )
+        run_step(
+            "转录稿规范化",
+            [
+                python,
+                "scripts/normalize_transcript.py",
+                "--workspace-root",
+                workspace_root,
+                *(["--series", args.series] if args.series else []),
+            ],
+        )
+        if not args.skip_split:
+            run_step(
+                "公众号拆稿",
+                [
+                    python,
+                    "scripts/split_to_wechat_articles.py",
+                    "--workspace-root",
+                    workspace_root,
+                    *(["--series", args.series] if args.series else []),
+                ],
+            )
+    except CalledProcessError as exc:
+        return exc.returncode if exc.returncode else 1
     return 0
 
 

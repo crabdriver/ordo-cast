@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 import hashlib
 import re
 from typing import Optional
@@ -65,7 +65,7 @@ def format_transcript_markdown(
     reviewed: bool,
 ) -> str:
     review_status = "已复核" if reviewed else "待复核"
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     return (
         f"系列：{series_name}\n"
         f"原音频：{source_name}\n"

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import json
+import os
+import tempfile
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -21,13 +23,31 @@ class PipelineManifest:
     def save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         payload = {"entries": self.entries}
-        self.path.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        text = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
+        if not text.strip():
+            raise ValueError("manifest 序列化结果为空，拒绝写入")
+        with tempfile.NamedTemporaryFile(
+            mode="w",
             encoding="utf-8",
-        )
+            delete=False,
+            dir=str(self.path.parent),
+            prefix=".manifest-",
+            suffix=".tmp",
+        ) as tmp:
+            tmp.write(text)
+            tmp_path = tmp.name
+        try:
+            os.replace(tmp_path, self.path)
+        except Exception:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
 
     def get(self, source_id: str) -> Dict[str, Any]:
-        return self.entries.get(source_id, {})
+        entry = self.entries.get(source_id)
+        return entry.copy() if entry else {}
 
     def upsert(self, source_id: str, values: Dict[str, Any]) -> Dict[str, Any]:
         current = self.entries.get(source_id, {}).copy()
@@ -42,4 +62,3 @@ class PipelineManifest:
             if entry.get("status") in {"submitted", "queued", "processing", "retry_pending"}:
                 pending.append(source_id)
         return pending
-

@@ -4,6 +4,7 @@ import unittest
 
 from audio_pipeline.article_splitter import (
     ArticleDraft,
+    derive_article_source_dir_name,
     resolve_article_output_dir,
     should_generate_articles,
     write_articles,
@@ -11,6 +12,18 @@ from audio_pipeline.article_splitter import (
 
 
 class ArticleSplitterTests(unittest.TestCase):
+    def test_should_generate_articles_defaults_to_full_auto_when_review_pending(self) -> None:
+        self.assertTrue(
+            should_generate_articles(
+                {
+                    "status": "completed",
+                    "article_status": "pending",
+                    "review_status": "pending",
+                },
+                allow_pending_review=False,
+            )
+        )
+
     def test_should_generate_articles_allows_base_transcript_even_if_normalization_failed(self) -> None:
         self.assertTrue(
             should_generate_articles(
@@ -26,8 +39,20 @@ class ArticleSplitterTests(unittest.TestCase):
     def test_resolve_article_output_dir_avoids_cross_series_collisions(self) -> None:
         base = Path("/tmp/articles")
 
-        self.assertEqual(resolve_article_output_dir(base, "天地大道"), base)
-        self.assertEqual(resolve_article_output_dir(base, "人类说明书"), base / "人类说明书")
+        self.assertEqual(resolve_article_output_dir(base, "天地大道", "03_关系底牌"), base / "天地大道" / "03_关系底牌")
+        self.assertEqual(resolve_article_output_dir(base, "人类说明书", "03_关系底牌"), base / "人类说明书" / "03_关系底牌")
+
+    def test_derive_article_source_dir_name_uses_issue_number_and_display_title(self) -> None:
+        self.assertEqual(
+            derive_article_source_dir_name(
+                {
+                    "sequence": 3,
+                    "display_title": "关系底牌",
+                    "source_name": "20260328. 关系底牌 [abc123].mp3",
+                }
+            ),
+            "03_关系底牌",
+        )
 
     def test_write_articles_uses_numbered_filenames_and_strips_h1_heading(self) -> None:
         with TemporaryDirectory() as tmp:

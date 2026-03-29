@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import json
 from pathlib import Path
 import re
 from typing import Iterable, List
 
-from .config import sanitize_title
+from .config import sanitize_title, strip_audio_prefix
+from .json_utils import parse_articles_payload
 
 
 HEADING_PATTERN = re.compile(r"^\s*#\s+.+?$", re.MULTILINE)
@@ -18,18 +18,50 @@ class ArticleDraft:
     body: str
 
 
-def resolve_article_output_dir(base_dir: Path, series_name: str) -> Path:
-    if series_name == "天地大道":
-        return base_dir
-    return base_dir / sanitize_title(series_name)
+def resolve_article_output_dir(base_dir: Path, series_name: str, source_dir_name: str | None = None) -> Path:
+    series_dir = base_dir / sanitize_title(series_name)
+    if not source_dir_name:
+        return series_dir
+    return series_dir / sanitize_title(source_dir_name)
+
+
+def derive_issue_number_from_entry(entry: dict) -> str:
+    sequence = entry.get("sequence")
+    if isinstance(sequence, int):
+        return str(sequence).zfill(2)
+    if isinstance(sequence, str) and sequence.isdigit():
+        return sequence.zfill(2)
+    source_name = str(entry.get("source_name") or "")
+    prefix = source_name.split(".", 1)[0].strip()
+    return prefix.zfill(2) if prefix.isdigit() else prefix
+
+
+def derive_article_source_dir_name(entry: dict) -> str:
+    issue_number = derive_issue_number_from_entry(entry)
+    display_title = sanitize_title(str(entry.get("display_title") or "").strip())
+    if not display_title:
+        display_title = sanitize_title(strip_audio_prefix(str(entry.get("source_name") or "")))
+    display_title = display_title or "未命名转录稿"
+    return f"{issue_number}_{display_title}"
+
+
+def inspect_article_output_state(entry: dict) -> str:
+    article_paths = [Path(path) for path in entry.get("article_paths") or [] if path]
+    if not article_paths:
+        return "none"
+    existing_count = sum(1 for path in article_paths if path.exists())
+    if existing_count == len(article_paths):
+        return "all_present"
+    if existing_count == 0:
+        return "all_missing"
+    return "partial"
 
 
 def should_generate_articles(entry: dict, *, allow_pending_review: bool) -> bool:
+    _ = allow_pending_review  # CLI 保留兼容；当前策略为默认全自动，不依赖人工复核前置
     if entry.get("status") != "completed":
         return False
-    if entry.get("article_status") == "completed":
-        return False
-    if entry.get("review_status") != "reviewed" and not allow_pending_review:
+    if inspect_article_output_state(entry) == "all_present":
         return False
     return True
 
@@ -55,15 +87,11 @@ def write_articles(output_dir: Path, issue_number: str, drafts: Iterable[Article
 
 
 def parse_article_drafts(raw_payload: str) -> List[ArticleDraft]:
-    text = raw_payload.strip()
-    if text.startswith("```json"):
-        text = text[7:]
-    if text.endswith("```"):
-        text = text[:-3]
-    data = json.loads(text.strip())
-    items = data["articles"] if isinstance(data, dict) else data
+    items = parse_articles_payload(raw_payload)
     drafts: List[ArticleDraft] = []
     for item in items:
-        drafts.append(ArticleDraft(title=item["title"].strip(), body=item["body"].strip()))
+        title = str(item.get("title", "")).strip()
+        body = str(item.get("body", "")).strip()
+        drafts.append(ArticleDraft(title=title or "未命名", body=body))
     return drafts
 
