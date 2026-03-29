@@ -5,8 +5,10 @@ import unittest
 from audio_pipeline.article_splitter import (
     ArticleDraft,
     derive_article_source_dir_name,
+    list_issue_article_files,
     resolve_article_output_dir,
     should_generate_articles,
+    validate_article_drafts,
     write_articles,
 )
 
@@ -125,6 +127,30 @@ class ArticleSplitterTests(unittest.TestCase):
                         )
                     ],
                 )
+
+    def test_validate_article_drafts_rejects_empty_body(self) -> None:
+        with self.assertRaises(ValueError):
+            validate_article_drafts([ArticleDraft(title="标题", body="")])
+
+    def test_validate_article_drafts_rejects_duplicate_sanitized_titles(self) -> None:
+        with self.assertRaises(ValueError):
+            validate_article_drafts(
+                [
+                    ArticleDraft(title="同一个标题", body="a"),
+                    ArticleDraft(title="同一个标题", body="b"),
+                ]
+            )
+
+    def test_list_issue_article_files_filters_by_issue_prefix(self) -> None:
+        with TemporaryDirectory() as tmp:
+            output_dir = Path(tmp)
+            (output_dir / "03-01_第一篇.md").write_text("a\n", encoding="utf-8")
+            (output_dir / "03-02_第二篇.md").write_text("b\n", encoding="utf-8")
+            (output_dir / "04-01_别的期数.md").write_text("c\n", encoding="utf-8")
+
+            files = list_issue_article_files(output_dir, "03")
+
+            self.assertEqual([path.name for path in files], ["03-01_第一篇.md", "03-02_第二篇.md"])
 
 
 if __name__ == "__main__":

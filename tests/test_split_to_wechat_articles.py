@@ -190,16 +190,20 @@ class SplitToWechatArticlesScriptTests(unittest.TestCase):
                 clear=False,
             ), patch("sys.argv", ["split_to_wechat_articles.py", "--workspace-root", str(workspace)]), patch(
                 "scripts.split_to_wechat_articles.build_text_client_from_env",
-                side_effect=AssertionError("不应调用 LLM"),
+                return_value=object(),
+            ), patch(
+                "scripts.split_to_wechat_articles.llm_generate_articles",
+                return_value=[ArticleDraft(title="关系底牌", body="新的正文")],
             ):
                 exit_code = main()
 
-            self.assertEqual(exit_code, 2)
+            self.assertEqual(exit_code, 0)
             manifest = PipelineManifest(workspace / ".pipeline" / "manifest.json")
             manifest.load()
             entry = manifest.get("tiandi/关系底牌")
-            self.assertEqual(entry["article_status"], "failed")
-            self.assertIn("部分文章文件已存在", entry["article_error"])
+            self.assertEqual(entry["article_status"], "completed")
+            self.assertTrue(Path(entry["article_paths"][0]).exists())
+            self.assertTrue((workspace / ".pipeline" / "recovery" / "articles").exists())
 
     def test_main_fails_when_article_count_mismatch_with_expected(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -217,9 +221,11 @@ class SplitToWechatArticlesScriptTests(unittest.TestCase):
                     "review_status": "reviewed",
                 },
             )
+            call_count = {"n": 0}
 
             def fake_generate(*, client, prompt_path, issue_number, transcript_text, principles_text, expected_article_count=None):
                 del client, prompt_path, transcript_text, principles_text, expected_article_count
+                call_count["n"] += 1
                 return [ArticleDraft(title="仅一篇", body="正文")]
 
             with patch.dict(
@@ -248,6 +254,54 @@ class SplitToWechatArticlesScriptTests(unittest.TestCase):
             manifest = PipelineManifest(workspace / ".pipeline" / "manifest.json")
             manifest.load()
             self.assertEqual(manifest.get("tiandi/关系底牌")["article_status"], "failed")
+            self.assertEqual(call_count["n"], 3)
+
+    def test_main_archives_disk_only_residual_articles_before_regenerating(self) -> None:
+        with TemporaryDirectory() as tmp:
+            residual_path = Path(tmp) / "文稿" / "拆解文章" / "天地大道" / "03_关系底牌" / "03-01_旧文章.md"
+            residual_path.parent.mkdir(parents=True, exist_ok=True)
+            residual_path.write_text("旧稿\n", encoding="utf-8")
+            workspace = self._prepare_workspace(
+                tmp,
+                {
+                    "status": "completed",
+                    "series_key": "tiandi",
+                    "source_name": "20260328. 关系底牌 [abc123].mp3",
+                    "sequence": 3,
+                    "display_title": "关系底牌",
+                    "transcript_path": str(Path(tmp) / "文稿" / "录音稿" / "天地大道" / "03_关系底牌.md"),
+                    "article_status": "pending",
+                    "article_paths": [],
+                    "review_status": "reviewed",
+                },
+            )
+
+            with patch.dict(
+                os.environ,
+                {
+                    "DOCUMENT_ROOT": str(workspace / "文稿"),
+                    "ARTICLE_PRINCIPLES_PATH": str(workspace / "文稿" / "本地配置" / "文章拆解核心原则与心法.md"),
+                },
+                clear=False,
+            ), patch(
+                "sys.argv",
+                ["split_to_wechat_articles.py", "--workspace-root", str(workspace)],
+            ), patch(
+                "scripts.split_to_wechat_articles.build_text_client_from_env",
+                return_value=object(),
+            ), patch(
+                "scripts.split_to_wechat_articles.llm_generate_articles",
+                return_value=[ArticleDraft(title="关系底牌", body="正文")],
+            ):
+                exit_code = main()
+
+            self.assertEqual(exit_code, 0)
+            manifest = PipelineManifest(workspace / ".pipeline" / "manifest.json")
+            manifest.load()
+            entry = manifest.get("tiandi/关系底牌")
+            self.assertEqual(entry["article_status"], "completed")
+            self.assertTrue(Path(entry["article_paths"][0]).exists())
+            self.assertTrue((workspace / ".pipeline" / "recovery" / "articles").exists())
 
     def test_main_returns_nonzero_when_principles_file_missing(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -281,6 +335,17 @@ class SplitToWechatArticlesScriptTests(unittest.TestCase):
                 exit_code = main()
 
             self.assertEqual(exit_code, 2)
+
+    def test_main_exits_when_expected_articles_env_is_invalid(self) -> None:
+        with patch.dict(
+            os.environ,
+            {"EXPECTED_ARTICLES_PER_TRANSCRIPT": "invalid"},
+            clear=False,
+        ), patch("sys.argv", ["split_to_wechat_articles.py"]):
+            with self.assertRaises(SystemExit) as ctx:
+                main()
+
+        self.assertEqual(ctx.exception.code, 2)
 
 
 if __name__ == "__main__":

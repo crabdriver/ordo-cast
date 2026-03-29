@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 import re
+import shutil
+import uuid
 from typing import Iterable, List
 
 from .config import sanitize_title, strip_audio_prefix
@@ -75,17 +77,60 @@ def strip_title_heading(body: str) -> str:
     return "\n".join(lines).strip()
 
 
-def write_articles(output_dir: Path, issue_number: str, drafts: Iterable[ArticleDraft]) -> List[Path]:
-    output_dir.mkdir(parents=True, exist_ok=True)
-    written: List[Path] = []
-    for index, draft in enumerate(drafts, start=1):
+def list_issue_article_files(output_dir: Path, issue_number: str) -> List[Path]:
+    if not output_dir.exists():
+        return []
+    return sorted(
+        path
+        for path in output_dir.glob(f"{issue_number}-*.md")
+        if path.is_file()
+    )
+
+
+def validate_article_drafts(drafts: Iterable[ArticleDraft], *, expected_count: int | None = None) -> List[ArticleDraft]:
+    normalized = [ArticleDraft(title=draft.title.strip(), body=draft.body.strip()) for draft in drafts]
+    if not normalized:
+        raise ValueError("模型未返回任何文章。")
+    if expected_count is not None and len(normalized) != expected_count:
+        raise ValueError(f"拆稿篇数 {len(normalized)} 与要求 {expected_count} 不一致。")
+    seen_filenames: set[str] = set()
+    for index, draft in enumerate(normalized, start=1):
+        if not draft.title:
+            raise ValueError(f"第 {index} 篇标题为空。")
+        if not draft.body:
+            raise ValueError(f"第 {index} 篇正文为空。")
         safe_title = sanitize_title(draft.title)
-        path = output_dir / f"{issue_number}-{index:02d}_{safe_title}.md"
-        if path.exists():
-            raise FileExistsError(f"目标文章已存在，拒绝覆盖：{path}")
-        path.write_text(strip_title_heading(draft.body).strip() + "\n", encoding="utf-8")
-        written.append(path)
-    return written
+        if not safe_title:
+            raise ValueError(f"第 {index} 篇标题清洗后为空。")
+        if safe_title in seen_filenames:
+            raise ValueError(f"第 {index} 篇标题与前文冲突，生成后文件名会重复：{safe_title}")
+        seen_filenames.add(safe_title)
+    return normalized
+
+
+def write_articles(output_dir: Path, issue_number: str, drafts: Iterable[ArticleDraft]) -> List[Path]:
+    normalized = validate_article_drafts(drafts)
+    output_dir.parent.mkdir(parents=True, exist_ok=True)
+    if output_dir.exists() and any(output_dir.iterdir()):
+        raise FileExistsError(f"目标文章目录非空，拒绝覆盖：{output_dir}")
+    if output_dir.exists():
+        output_dir.rmdir()
+
+    staging_dir = output_dir.parent / f".{output_dir.name}.staging-{uuid.uuid4().hex[:8]}"
+    staging_dir.mkdir(parents=True, exist_ok=True)
+    written_names: List[str] = []
+    try:
+        for index, draft in enumerate(normalized, start=1):
+            safe_title = sanitize_title(draft.title)
+            filename = f"{issue_number}-{index:02d}_{safe_title}.md"
+            path = staging_dir / filename
+            path.write_text(strip_title_heading(draft.body).strip() + "\n", encoding="utf-8")
+            written_names.append(filename)
+        staging_dir.rename(output_dir)
+    except Exception:
+        shutil.rmtree(staging_dir, ignore_errors=True)
+        raise
+    return [output_dir / name for name in written_names]
 
 
 def parse_article_drafts(raw_payload: str) -> List[ArticleDraft]:
@@ -94,6 +139,6 @@ def parse_article_drafts(raw_payload: str) -> List[ArticleDraft]:
     for item in items:
         title = str(item.get("title", "")).strip()
         body = str(item.get("body", "")).strip()
-        drafts.append(ArticleDraft(title=title or "未命名", body=body))
+        drafts.append(ArticleDraft(title=title, body=body))
     return drafts
 

@@ -90,8 +90,8 @@ def main() -> int:
     if all(not item.channel_url for item in selected_sources):
         print(f"已准备好配置文件：{youtube_sources_path}")
         print("请先填写每个栏目对应的 YouTube 播放列表或频道 URL，然后重新运行下载脚本。")
-        logger.finish(status="skipped", message="未配置任何 channel_url")
-        return 0
+        logger.finish(status="failed", message="未配置任何 channel_url")
+        return 2
 
     downloader = YouTubeBatchDownloader(
         workspace_root=workspace_root,

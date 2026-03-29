@@ -1,4 +1,7 @@
 import os
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -54,6 +57,72 @@ class BuildProviderTests(unittest.TestCase):
         self.assertEqual(exit_code, 2)
         printed = " ".join(" ".join(str(arg) for arg in call.args) for call in mock_print.call_args_list)
         self.assertIn("VOLCENGINE_ACCESS_TOKEN", printed)
+
+    def test_main_returns_incomplete_when_wait_hits_max_rounds(self) -> None:
+        class FakeWorkflow:
+            def __init__(self, *, paths, **_kwargs):
+                self.manifest_path = paths.manifest_path
+
+            def run_once(self) -> None:
+                self.manifest_path.write_text(
+                    '{"entries": {"tiandi/第一课": {"series_key": "tiandi", "status": "submitted"}}}\n',
+                    encoding="utf-8",
+                )
+
+        with TemporaryDirectory() as tmp:
+            series = [SimpleNamespace(key="tiandi", display_name="天地大道")]
+            provider = SimpleNamespace(api_mode="standard")
+            with patch("scripts.transcribe_batch.load_series_map", return_value=series), patch(
+                "scripts.transcribe_batch.build_provider",
+                return_value=provider,
+            ), patch("scripts.transcribe_batch.BatchTranscriptionWorkflow", FakeWorkflow), patch(
+                "sys.argv",
+                [
+                    "transcribe_batch.py",
+                    "--workspace-root",
+                    tmp,
+                    "--wait",
+                    "--max-rounds",
+                    "1",
+                ],
+            ), patch("builtins.print") as mock_print:
+                exit_code = main()
+
+        self.assertEqual(exit_code, 3)
+        printed = " ".join(" ".join(str(arg) for arg in call.args) for call in mock_print.call_args_list)
+        self.assertIn("状态=incomplete", printed)
+
+    def test_main_returns_failed_when_manifest_contains_failed_entry(self) -> None:
+        class FakeWorkflow:
+            def __init__(self, *, paths, **_kwargs):
+                self.manifest_path = paths.manifest_path
+
+            def run_once(self) -> None:
+                self.manifest_path.write_text(
+                    '{"entries": {"tiandi/第一课": {"series_key": "tiandi", "status": "failed"}}}\n',
+                    encoding="utf-8",
+                )
+
+        with TemporaryDirectory() as tmp:
+            series = [SimpleNamespace(key="tiandi", display_name="天地大道")]
+            provider = SimpleNamespace(api_mode="standard")
+            with patch("scripts.transcribe_batch.load_series_map", return_value=series), patch(
+                "scripts.transcribe_batch.build_provider",
+                return_value=provider,
+            ), patch("scripts.transcribe_batch.BatchTranscriptionWorkflow", FakeWorkflow), patch(
+                "sys.argv",
+                [
+                    "transcribe_batch.py",
+                    "--workspace-root",
+                    tmp,
+                    "--wait",
+                    "--max-rounds",
+                    "1",
+                ],
+            ):
+                exit_code = main()
+
+        self.assertEqual(exit_code, 2)
 
 
 if __name__ == "__main__":

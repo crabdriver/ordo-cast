@@ -93,13 +93,34 @@ python3 scripts/split_to_wechat_articles.py --series tiandi
 拆稿行为说明：
 
 - **待复核**：manifest 中 `review_status=pending` 时，默认**跳过**拆稿；若要对未复核长稿拆稿，请加 `--allow-pending-review`（全链路 `run_full_pipeline.py` 亦支持同名参数）。
-- **固定篇数**：需要每期恰好拆成 14 篇时，可在 `.env` 设置 `EXPECTED_ARTICLES_PER_TRANSCRIPT=14`，或运行 `split_to_wechat_articles.py --expected-articles 14`。篇数与模型输出不一致时会报错且**不写入**文章文件。
+- **固定篇数**：需要每期恰好拆成 14 篇时，可在 `.env` 设置 `EXPECTED_ARTICLES_PER_TRANSCRIPT=14`，或运行 `split_to_wechat_articles.py --expected-articles 14`。篇数与模型输出不一致时会自动重试；最终仍不一致则报错且**不写入**文章文件。
+- **残留旧稿**：若磁盘上存在残留或部分旧拆稿目录，脚本会自动归档到 `.pipeline/recovery/articles/` 后重试，而不是直接要求人工清理。
 
 一条命令跑完整链路：
 
 ```bash
 python3 scripts/run_full_pipeline.py --series tiandi
 ```
+
+如果你想用“一次性完整链路”直接走全自动语义：
+
+```bash
+python3 scripts/run_full_pipeline.py --series tiandi --full-auto --expected-articles 14
+```
+
+其中 `--full-auto` 会自动把拆稿阶段切到 `--allow-pending-review`，避免因为 `review_status=pending` 被静默跳过。
+
+无人值守自动驾驶入口：
+
+```bash
+python3 scripts/auto_run_pipeline.py --series tiandi --expected-articles 14
+```
+
+`auto_run_pipeline.py` 会循环执行下载、转录、规范化、拆稿，并在以下场景退出：
+
+- `0`：本轮已收敛，转录/规范化/拆稿都到达可接受终态。
+- `3`：流程仍未完全收敛，但连续多轮无进展或达到最大自动驾驶轮次。
+- `2`：存在明确失败（配置错误、下载失败、转录失败、拆稿失败等）。
 
 ## 迁移旧数据
 
@@ -127,4 +148,4 @@ python3 scripts/migrate_open_source_layout.py --workspace-root .
 
 1. 先只跑一个系列，确认新文件已经落到 `文稿/` 下。
 2. 再重跑一次同一系列，确认不会因为路径迁移而重复生成混乱文件。
-3. 最后再放开全部系列执行总控脚本。
+3. 最后再放开全部系列执行总控脚本或 `auto_run_pipeline.py`。

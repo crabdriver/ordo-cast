@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 import os
 from pathlib import Path
+import shutil
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -15,13 +17,17 @@ from audio_pipeline.article_splitter import (
     derive_article_source_dir_name,
     derive_issue_number_from_entry,
     inspect_article_output_state,
+    list_issue_article_files,
     resolve_article_output_dir,
     should_generate_articles,
+    validate_article_drafts,
     write_articles,
 )
 from audio_pipeline.config import PipelinePaths, load_series_map, resolve_article_principles_path
 from audio_pipeline.manifest import PipelineManifest
 from audio_pipeline.task_logging import PipelineTaskLogger
+
+MAX_ARTICLE_GENERATION_ATTEMPTS = 3
 
 
 def parse_args() -> argparse.Namespace:
@@ -61,9 +67,11 @@ def resolve_expected_article_count(args: argparse.Namespace) -> int | None:
     try:
         n = int(raw)
     except ValueError:
-        return None
+        print("错误：环境变量 EXPECTED_ARTICLES_PER_TRANSCRIPT 必须为正整数。", file=sys.stderr)
+        raise SystemExit(2)
     if n < 1:
-        return None
+        print("错误：环境变量 EXPECTED_ARTICLES_PER_TRANSCRIPT 必须为正整数。", file=sys.stderr)
+        raise SystemExit(2)
     return n
 
 
@@ -72,6 +80,56 @@ def extract_transcript_body(transcript_text: str) -> str:
     if marker in transcript_text:
         return transcript_text.split(marker, 1)[1].strip()
     return transcript_text.strip()
+
+
+def archive_existing_output_dir(*, output_dir: Path, archive_root: Path) -> Path | None:
+    if not output_dir.exists():
+        return None
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+    archive_dir = archive_root / timestamp / output_dir.relative_to(output_dir.parent.parent)
+    archive_dir.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(output_dir), str(archive_dir))
+    return archive_dir
+
+
+def generate_articles_with_retry(
+    *,
+    client,
+    prompt_path: Path,
+    issue_number: str,
+    transcript_text: str,
+    principles_text: str,
+    expected_article_count: int | None,
+    logger: PipelineTaskLogger,
+    entry: dict,
+) -> list:
+    last_exc: Exception | None = None
+    for attempt in range(1, MAX_ARTICLE_GENERATION_ATTEMPTS + 1):
+        try:
+            drafts = llm_generate_articles(
+                client=client,
+                prompt_path=prompt_path,
+                issue_number=issue_number,
+                transcript_text=transcript_text,
+                principles_text=principles_text,
+                expected_article_count=expected_article_count,
+            )
+            return validate_article_drafts(drafts, expected_count=expected_article_count)
+        except Exception as exc:
+            last_exc = exc
+            if attempt >= MAX_ARTICLE_GENERATION_ATTEMPTS:
+                break
+            logger.log_event(
+                stage="split_articles_retry",
+                status="retrying",
+                message=f"第 {attempt} 次拆稿失败，准备重试：{exc}",
+                series_key=entry.get("series_key"),
+                title_key=entry.get("title_key"),
+                display_title=entry.get("display_title"),
+                transcript_path=entry.get("transcript_path"),
+                details={"attempt": attempt},
+            )
+    raise RuntimeError(f"拆稿连续 {MAX_ARTICLE_GENERATION_ATTEMPTS} 次失败：{last_exc}")
 
 
 def main() -> int:
@@ -95,6 +153,7 @@ def main() -> int:
     principles_text = principles_path.read_text(encoding="utf-8")
     failure_count = 0
     selected_series = {item.strip() for item in (args.series or "").split(",") if item.strip()}
+    article_archive_root = workspace_root / ".pipeline" / "recovery" / "articles"
     for source_id, entry in manifest.entries.items():
         if args.source_id and source_id != args.source_id:
             continue
@@ -122,27 +181,62 @@ def main() -> int:
             continue
         if not should_generate_articles(entry, allow_pending_review=args.allow_pending_review):
             continue
+        series = series_index[entry["series_key"]]
+        issue_number = derive_issue_number_from_entry(entry)
+        output_dir = resolve_article_output_dir(
+            paths.article_dir,
+            series.display_name,
+            derive_article_source_dir_name(entry),
+        )
+        disk_article_paths = list_issue_article_files(output_dir, issue_number)
         if output_state == "partial":
-            message = "检测到部分文章文件已存在，拒绝覆盖，请人工处理。"
+            archive_dir = archive_existing_output_dir(output_dir=output_dir, archive_root=article_archive_root)
             manifest.upsert(
                 source_id,
                 {
-                    "article_status": "failed",
-                    "article_error": message,
+                    "article_status": "pending",
+                    "article_paths": [],
+                    "article_error": None,
+                    "article_archive_dir": str(archive_dir) if archive_dir else entry.get("article_archive_dir"),
                 },
             )
             logger.log_event(
-                stage="split_articles",
-                status="failed",
-                message=message,
+                stage="repair_article_state",
+                status="success",
+                message="检测到部分文章文件，已自动归档并准备重试拆稿",
                 series_key=entry.get("series_key"),
                 title_key=entry.get("title_key"),
                 display_title=entry.get("display_title"),
                 transcript_path=entry.get("transcript_path"),
-                details={"article_paths": entry.get("article_paths", [])},
+                details={
+                    "article_paths": entry.get("article_paths", []),
+                    "archive_dir": str(archive_dir) if archive_dir else None,
+                },
             )
-            failure_count += 1
-            continue
+        elif not entry.get("article_paths") and disk_article_paths:
+            archive_dir = archive_existing_output_dir(output_dir=output_dir, archive_root=article_archive_root)
+            manifest.upsert(
+                source_id,
+                {
+                    "article_status": "pending",
+                    "article_paths": [],
+                    "article_error": None,
+                    "article_archive_dir": str(archive_dir) if archive_dir else entry.get("article_archive_dir"),
+                },
+            )
+            logger.log_event(
+                stage="repair_article_state",
+                status="success",
+                message="检测到磁盘上残留旧文章目录，已自动归档并准备重试拆稿",
+                series_key=entry.get("series_key"),
+                title_key=entry.get("title_key"),
+                display_title=entry.get("display_title"),
+                transcript_path=entry.get("transcript_path"),
+                details={
+                    "disk_article_paths": [str(path) for path in disk_article_paths],
+                    "archive_dir": str(archive_dir) if archive_dir else None,
+                },
+            )
         transcript_path = Path(entry["transcript_path"])
         if not transcript_path.exists():
             message = f"转录稿不存在：{transcript_path}"
@@ -170,24 +264,15 @@ def main() -> int:
             if client is None:
                 raise RuntimeError("缺少 CONTENT_LLM_API_KEY / BASE_URL / MODEL，无法拆稿。")
             transcript_text = extract_transcript_body(transcript_path.read_text(encoding="utf-8"))
-            issue_number = derive_issue_number_from_entry(entry)
-            drafts = llm_generate_articles(
+            drafts = generate_articles_with_retry(
                 client=client,
                 prompt_path=prompt_path,
                 issue_number=issue_number,
                 transcript_text=transcript_text,
                 principles_text=principles_text,
                 expected_article_count=expected_article_count,
-            )
-            if expected_article_count is not None and len(drafts) != expected_article_count:
-                raise RuntimeError(
-                    f"拆稿篇数 {len(drafts)} 与要求 {expected_article_count} 不一致，未写入文件。"
-                )
-            series = series_index[entry["series_key"]]
-            output_dir = resolve_article_output_dir(
-                paths.article_dir,
-                series.display_name,
-                derive_article_source_dir_name(entry),
+                logger=logger,
+                entry=entry,
             )
             article_paths = write_articles(output_dir, issue_number, drafts)
             manifest.upsert(

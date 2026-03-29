@@ -13,7 +13,14 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from audio_pipeline.article_splitter import derive_article_source_dir_name
-from audio_pipeline.config import PipelinePaths, load_series_map, resolve_article_principles_path, resolve_document_root, sanitize_title
+from audio_pipeline.config import (
+    DEFAULT_ARTICLE_PRINCIPLES_DIRNAME,
+    DEFAULT_ARTICLE_PRINCIPLES_FILENAME,
+    PipelinePaths,
+    load_series_map,
+    resolve_document_root,
+    sanitize_title,
+)
 from audio_pipeline.manifest import PipelineManifest
 
 
@@ -82,7 +89,7 @@ def migrate_workspace_layout(workspace_root: Path) -> dict[str, int]:
     summary["moved_legacy_articles"] += _move_directory_files(legacy_article_root, legacy_import_root, workspace_root=workspace_root)
 
     legacy_principles_path = workspace_root / "00_文章拆解核心原则与心法.md"
-    new_principles_path = resolve_article_principles_path(document_root)
+    new_principles_path = document_root / DEFAULT_ARTICLE_PRINCIPLES_DIRNAME / DEFAULT_ARTICLE_PRINCIPLES_FILENAME
     if legacy_principles_path.exists() and not new_principles_path.exists():
         new_principles_path.parent.mkdir(parents=True, exist_ok=True)
         new_principles_path.write_text(legacy_principles_path.read_text(encoding="utf-8"), encoding="utf-8")

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -30,6 +31,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--skip-download", action="store_true", help="跳过 YouTube 下载阶段")
     parser.add_argument("--skip-split", action="store_true", help="跳过自动拆稿阶段")
     parser.add_argument(
+        "--full-auto",
+        action="store_true",
+        help="全自动模式：拆稿阶段默认放行待复核长稿（等价于自动传 --allow-pending-review）",
+    )
+    parser.add_argument(
         "--allow-pending-review",
         action="store_true",
         help="拆稿阶段允许「待复核」长稿（传给 split_to_wechat_articles）",
@@ -44,11 +50,19 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def resolve_full_auto(explicit: bool) -> bool:
+    if explicit:
+        return True
+    raw = os.getenv("PIPELINE_FULL_AUTO", "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
 def run_step(label: str, command: list[str]) -> None:
     try:
         subprocess.run(command, cwd=str(ROOT), check=True)
     except CalledProcessError as exc:
-        print(f"步骤「{label}」失败，退出码 {exc.returncode}。")
+        suffix = "（任务未收敛，请继续轮询或检查失败条目）" if exc.returncode == 3 else ""
+        print(f"步骤「{label}」失败，退出码 {exc.returncode}。{suffix}")
         raise
 
 
@@ -57,6 +71,7 @@ def main() -> int:
     args = parse_args()
     workspace_root = args.workspace_root
     python = sys.executable
+    full_auto = resolve_full_auto(args.full_auto)
 
     try:
         if not args.skip_download:
@@ -105,7 +120,7 @@ def main() -> int:
                 workspace_root,
                 *(["--series", args.series] if args.series else []),
             ]
-            if args.allow_pending_review:
+            if args.allow_pending_review or full_auto:
                 split_cmd.append("--allow-pending-review")
             if args.expected_articles is not None:
                 split_cmd.extend(["--expected-articles", str(args.expected_articles)])

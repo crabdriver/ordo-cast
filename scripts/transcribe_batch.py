@@ -22,6 +22,7 @@ from audio_pipeline.config import (
     write_default_series_map,
 )
 from audio_pipeline.manifest import PipelineManifest
+from audio_pipeline.pipeline_health import format_transcription_health_message, summarize_transcription_entries
 from audio_pipeline.task_logging import PipelineTaskLogger
 from audio_pipeline.transcription import AliyunOssSignedUploader, VolcengineBigModelProvider
 from audio_pipeline.workflow import BatchTranscriptionWorkflow
@@ -131,6 +132,7 @@ def main() -> int:
         series = filter_series(load_series_map(paths.series_map_path), args.series)
         if not series:
             raise RuntimeError("未匹配到任何系列，请检查 --series 参数。")
+        series_keys = [item.key for item in series]
         provider = build_provider(args.api_mode)
         poll_interval = resolve_poll_interval(args.poll_interval, provider.api_mode)
         manifest = PipelineManifest(paths.manifest_path)
@@ -150,16 +152,24 @@ def main() -> int:
         while True:
             workflow.run_once()
             manifest.load()
-            pending = manifest.pending_source_ids()
-            print(f"当前待完成任务数：{len(pending)}")
-            if not args.wait or not pending:
+            report = summarize_transcription_entries(manifest.entries, series_keys=series_keys)
+            print(f"当前转录进度：{format_transcription_health_message(report)}")
+            if report.state != "incomplete" or not args.wait:
                 break
             rounds += 1
             if rounds >= args.max_rounds:
                 print("达到最大轮询次数，保留当前进度后退出。")
                 break
             time.sleep(poll_interval)
-        logger.finish(status="success", message=f"转录批处理结束，待完成任务数：{len(pending)}")
+        final_report = summarize_transcription_entries(manifest.entries, series_keys=series_keys)
+        final_message = f"转录批处理结束，{format_transcription_health_message(final_report)}"
+        if final_report.state == "failed":
+            logger.finish(status="failed", message=final_message)
+            return 2
+        if args.wait and final_report.state == "incomplete":
+            logger.finish(status="incomplete", message=final_message)
+            return 3
+        logger.finish(status="success", message=final_message)
         return 0
     except RuntimeError as exc:
         print(f"错误：{exc}")
