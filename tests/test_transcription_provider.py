@@ -69,6 +69,7 @@ class VolcengineBigModelProviderTests(unittest.TestCase):
 
         self.assertRegex(events["put"][0], r"^audio-source/天地大道/0000_[0-9a-f]{16}\.mp3$")
         self.assertEqual(events["put"][2]["x-oss-forbid-overwrite"], "true")
+        self.assertEqual(events["put"][2]["x-oss-storage-class"], "Standard")
         self.assertEqual(events["sign"], ("GET", events["put"][0], 1800, True))
         self.assertTrue(signed_url.startswith(f"https://example.com/{events['put'][0]}"))
 
@@ -79,6 +80,18 @@ class VolcengineBigModelProviderTests(unittest.TestCase):
             def put_object_from_file(self, object_key, filename, headers=None):
                 events["put"] = (object_key, filename, headers)
                 raise RuntimeError("FileAlreadyExists")
+
+            def get_object(self, object_key):
+                events["get"] = object_key
+
+                class Response:
+                    def read(self, size=-1):
+                        return b"x"
+
+                    def close(self):
+                        return None
+
+                return Response()
 
             def sign_url(self, method, object_key, expires, headers=None, params=None, slash_safe=False, additional_headers=None):
                 events["sign"] = (method, object_key, expires, slash_safe)
@@ -102,8 +115,53 @@ class VolcengineBigModelProviderTests(unittest.TestCase):
             signed_url = uploader.upload(audio_path)
 
         self.assertRegex(events["put"][0], r"^audio-source/人类说明书/0000_[0-9a-f]{16}\.mp3$")
+        self.assertEqual(events["put"][2]["x-oss-storage-class"], "Standard")
+        self.assertEqual(events["get"], events["put"][0])
         self.assertEqual(events["sign"], ("GET", events["put"][0], 1800, True))
         self.assertTrue(signed_url.startswith(f"https://example.com/{events['put'][0]}"))
+
+    def test_oss_uploader_overwrites_existing_unreadable_object_with_standard_storage(self) -> None:
+        events = {"puts": []}
+
+        class FakeBucket:
+            def put_object_from_file(self, object_key, filename, headers=None):
+                events["puts"].append((object_key, filename, headers))
+                if len(events["puts"]) == 1:
+                    raise RuntimeError("FileAlreadyExists")
+
+            def get_object(self, object_key):
+                events["get"] = object_key
+                raise RuntimeError("InvalidObjectState")
+
+            def sign_url(self, method, object_key, expires, headers=None, params=None, slash_safe=False, additional_headers=None):
+                events["sign"] = (method, object_key, expires, slash_safe)
+                return f"https://example.com/{object_key}?signature=1"
+
+        with TemporaryDirectory() as tmp:
+            series_dir = Path(tmp) / "人类说明书"
+            series_dir.mkdir()
+            audio_path = series_dir / "demo.mp3"
+            audio_path.write_bytes(b"123")
+            uploader = AliyunOssSignedUploader(
+                access_key_id="oss-ak",
+                access_key_secret="oss-sk",
+                bucket_name="dianliangxingkong",
+                endpoint="oss-cn-shanghai.aliyuncs.com",
+                bucket=FakeBucket(),
+                key_prefix="audio-source",
+                expires=1800,
+            )
+
+            signed_url = uploader.upload(audio_path)
+
+        self.assertEqual(len(events["puts"]), 2)
+        self.assertEqual(events["get"], events["puts"][0][0])
+        self.assertEqual(events["puts"][0][2]["x-oss-forbid-overwrite"], "true")
+        self.assertEqual(events["puts"][0][2]["x-oss-storage-class"], "Standard")
+        self.assertNotIn("x-oss-forbid-overwrite", events["puts"][1][2])
+        self.assertEqual(events["puts"][1][2]["x-oss-storage-class"], "Standard")
+        self.assertEqual(events["sign"], ("GET", events["puts"][0][0], 1800, True))
+        self.assertTrue(signed_url.startswith(f"https://example.com/{events['puts'][0][0]}"))
 
     def test_idle_mode_uses_idle_submit_and_query_urls(self) -> None:
         provider = VolcengineBigModelProvider(
@@ -153,6 +211,7 @@ class VolcengineBigModelProviderTests(unittest.TestCase):
         self.assertEqual(events["attempts"], 3)
         self.assertRegex(events["put"][0], r"^audio-source/人类说明书-问道/0000_[0-9a-f]{16}\.mp3$")
         self.assertEqual(events["put"][2]["x-oss-forbid-overwrite"], "true")
+        self.assertEqual(events["put"][2]["x-oss-storage-class"], "Standard")
         self.assertEqual(events["sign"], ("GET", events["put"][0], 1800, True))
         self.assertTrue(signed_url.startswith(f"https://example.com/{events['put'][0]}"))
 
@@ -186,6 +245,7 @@ class VolcengineBigModelProviderTests(unittest.TestCase):
 
         self.assertRegex(events["put"][0], r"^audio-source/天地大道/0000_[0-9a-f]{16}\.mp3$")
         self.assertEqual(events["put"][2]["x-oss-forbid-overwrite"], "true")
+        self.assertEqual(events["put"][2]["x-oss-storage-class"], "Standard")
         self.assertEqual(events["sign"], ("GET", events["put"][0], 1800, True))
         self.assertTrue(signed_url.startswith(f"https://example.com/{events['put'][0]}"))
 

@@ -73,6 +73,7 @@ class AliyunOssSignedUploader(AbstractAudioUploader):
         endpoint: str,
         key_prefix: str = "audio-source",
         expires: int = 3600,
+        storage_class: str = "Standard",
         bucket: Any = None,
         max_retries: int = 3,
         retry_sleep_seconds: float = 1.0,
@@ -83,6 +84,7 @@ class AliyunOssSignedUploader(AbstractAudioUploader):
         self.endpoint = endpoint
         self.key_prefix = key_prefix.strip("/")
         self.expires = expires
+        self.storage_class = storage_class
         self._bucket = bucket
         self.max_retries = max(1, max_retries)
         self.retry_sleep_seconds = retry_sleep_seconds
@@ -95,18 +97,44 @@ class AliyunOssSignedUploader(AbstractAudioUploader):
                 bucket.put_object_from_file(
                     object_key,
                     str(audio_path),
-                    headers={"x-oss-forbid-overwrite": "true"},
+                    headers=self._upload_headers(forbid_overwrite=True),
                 )
                 return bucket.sign_url("GET", object_key, self.expires, slash_safe=True)
             except Exception as exc:
                 detail = str(exc)
                 if _is_existing_object_error(detail):
+                    if self._object_is_readable(bucket, object_key):
+                        return bucket.sign_url("GET", object_key, self.expires, slash_safe=True)
+                    bucket.put_object_from_file(
+                        object_key,
+                        str(audio_path),
+                        headers=self._upload_headers(forbid_overwrite=False),
+                    )
                     return bucket.sign_url("GET", object_key, self.expires, slash_safe=True)
                 if not _is_transient_error(detail) or attempt >= self.max_retries:
                     raise RuntimeError(_format_auth_aware_error("OSS", detail, "请检查 OSS_ACCESS_KEY_ID / OSS_ACCESS_KEY_SECRET 是否已失效。")) from exc
                 if self.retry_sleep_seconds > 0:
                     time.sleep(self.retry_sleep_seconds)
         raise RuntimeError("OSS 调用失败：上传未完成")
+
+    def _upload_headers(self, *, forbid_overwrite: bool) -> dict[str, str]:
+        headers = {"x-oss-storage-class": self.storage_class}
+        if forbid_overwrite:
+            headers["x-oss-forbid-overwrite"] = "true"
+        return headers
+
+    def _object_is_readable(self, bucket: Any, object_key: str) -> bool:
+        try:
+            response = bucket.get_object(object_key)
+            try:
+                response.read(1)
+            finally:
+                close = getattr(response, "close", None)
+                if callable(close):
+                    close()
+            return True
+        except Exception:
+            return False
 
     def _build_object_key(self, audio_path: Path) -> str:
         parts = [part for part in [self.key_prefix, audio_path.parent.name, self._build_object_filename(audio_path)] if part]
