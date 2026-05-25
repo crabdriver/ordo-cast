@@ -1,0 +1,10 @@
+{
+  "sources": [
+    {
+      "series_key": "example-series",
+      "channel_url": "",
+      "download_mode": "audio_only_mp3",
+      "archive_file": ".pipeline/youtube_archive/example-series.txt"
+    }
+  ]
+}

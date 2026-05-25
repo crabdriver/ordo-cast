@@ -1,0 +1,14 @@
+{
+  "series": [
+    {
+      "key": "example-series",
+      "display_name": "示例栏目",
+      "audio_dir": "${HOME}/Music/示例栏目",
+      "transcript_dir": "${DOCUMENT_ROOT}/录音稿/示例栏目",
+      "prefix_width": 2,
+      "title_prefixes": [
+        "示例栏目"
+      ]
+    }
+  ]
+}
