@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from audio_pipeline.ai_tasks import build_text_client_from_env, llm_cleanup_transcript
+from experimental_llm_writer.ai_tasks import build_text_client_from_env, llm_cleanup_transcript
 from audio_pipeline.config import PipelinePaths, load_series_map
 from audio_pipeline.manifest import PipelineManifest
 from audio_pipeline.normalization import (
@@ -49,7 +49,7 @@ def main() -> int:
             "提示：未配置 CONTENT_LLM_API_KEY / CONTENT_LLM_BASE_URL / CONTENT_LLM_MODEL，将仅使用规则清洗（无 LLM 润色）。",
             flush=True,
         )
-    prompt_path = paths.prompts_dir / "clean_transcript.md"
+    prompt_path = Path(__file__).parent / "prompts" / "clean_transcript.md"
     selected_series = {item.strip() for item in (args.series or "").split(",") if item.strip()}
     logger = PipelineTaskLogger(workspace_root=workspace_root, module="normalize")
     failure_count = 0

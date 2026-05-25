@@ -12,8 +12,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from audio_pipeline.ai_tasks import build_text_client_from_env, llm_generate_articles
-from audio_pipeline.article_splitter import (
+from experimental_llm_writer.ai_tasks import build_text_client_from_env, llm_generate_articles
+from experimental_llm_writer.article_splitter import (
     derive_article_source_dir_name,
     derive_issue_number_from_entry,
     inspect_article_output_state,
@@ -144,7 +144,7 @@ def main() -> int:
     series_index = {series.key: series for series in load_series_map(paths.series_map_path)}
     logger = PipelineTaskLogger(workspace_root=workspace_root, module="split")
     client = None
-    prompt_path = paths.prompts_dir / "split_wechat_articles.md"
+    prompt_path = Path(__file__).parent / "prompts" / "split_wechat_articles.md"
     principles_path = resolve_article_principles_path()
     if not principles_path.exists():
         message = f"缺少拆稿原则文件：{principles_path}"

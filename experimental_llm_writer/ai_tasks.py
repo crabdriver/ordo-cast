@@ -6,7 +6,7 @@ from typing import List, Optional
 
 from .article_splitter import ArticleDraft, parse_article_drafts
 from .llm import OpenAICompatibleTextClient
-from .normalization import scrub_transcript_text
+from audio_pipeline.normalization import scrub_transcript_text
 
 
 TRANSCRIPT_SYSTEM_PROMPT = "你是专业的中文录音整理编辑，请把口语转成适合后续拆稿的长稿，不要杜撰。"
@@ -74,4 +74,3 @@ def llm_generate_articles(
     )
     payload = client.complete_text(system_prompt=ARTICLE_SYSTEM_PROMPT, user_prompt=prompt)
     return parse_article_drafts(payload)
-

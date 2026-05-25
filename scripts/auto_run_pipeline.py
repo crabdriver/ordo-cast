@@ -25,7 +25,7 @@ def _load_env() -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="无人值守自动推进下载、转录、规范化与拆稿")
+    parser = argparse.ArgumentParser(description="无人值守自动推进音视频下载与 Volcengine ASR 批量转录")
     parser.add_argument("--workspace-root", default=str(ROOT), help="项目根目录，默认仓库根目录")
     parser.add_argument("--series", help="只处理指定系列 key，多个用逗号分隔")
     parser.add_argument("--poll-interval", type=int, default=15, help="转录脚本每轮轮询间隔秒数")
@@ -34,9 +34,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-cycles", type=int, default=12, help="自动驾驶最多跑多少个大循环")
     parser.add_argument("--sleep-seconds", type=int, default=60, help="两轮大循环之间等待秒数")
     parser.add_argument("--max-idle-cycles", type=int, default=2, help="连续多少轮无进展后退出为 incomplete")
-    parser.add_argument("--expected-articles", type=int, default=None, metavar="N", help="拆稿必须恰好 N 篇")
     parser.add_argument("--skip-download", action="store_true", help="跳过下载阶段")
-    parser.add_argument("--skip-split", action="store_true", help="跳过拆稿阶段")
+    parser.add_argument("--skip-split", action="store_true", help="[已废弃] 下游 LLM 拆稿已移入 experimental_llm_writer")
+    parser.add_argument("--expected-articles", type=int, default=None, metavar="N", help="[已废弃] 下游 LLM 拆稿已移入 experimental_llm_writer")
     return parser.parse_args()
 
 
@@ -61,22 +61,16 @@ def count_audio_files(series: list) -> int:
 def summarize_pipeline(entries: dict, *, series_keys: list[str]) -> dict[str, int | str]:
     report = summarize_transcription_entries(entries, series_keys=series_keys)
     filtered = [entry for entry in entries.values() if not series_keys or entry.get("series_key") in series_keys]
-    normalized = sum(1 for entry in filtered if entry.get("normalization_status") == "completed")
-    article_completed = sum(1 for entry in filtered if entry.get("article_status") == "completed")
     submitted = sum(1 for entry in filtered if entry.get("job_id") or entry.get("submitted_audio_sha1"))
     failed = sum(
         1
         for entry in filtered
         if entry.get("status") == "failed"
-        or entry.get("normalization_status") == "failed"
-        or entry.get("article_status") == "failed"
     )
     return {
         "state": report.state,
         "submitted": submitted,
         "completed_transcripts": report.completed_entries,
-        "normalized": normalized,
-        "article_completed": article_completed,
         "failed": failed,
         "active": report.active_entries,
         "health_message": format_transcription_health_message(report),
@@ -85,9 +79,8 @@ def summarize_pipeline(entries: dict, *, series_keys: list[str]) -> dict[str, in
 
 def build_cycle_summary(*, cycle: int, new_audio: int, summary: dict[str, int | str]) -> str:
     return (
-        f"第 {cycle} 轮：新增音频 {new_audio}，已提交 {summary['submitted']}，"
-        f"已完成转录 {summary['completed_transcripts']}，已规范化 {summary['normalized']}，"
-        f"已拆稿 {summary['article_completed']}，失败 {summary['failed']}，"
+        f"第 {cycle} 轮：新增音频 {new_audio}，已提交转录任务 {summary['submitted']}，"
+        f"已成功转录 {summary['completed_transcripts']}，失败 {summary['failed']}，"
         f"{summary['health_message']}"
     )
 
@@ -107,7 +100,7 @@ def main() -> int:
     series_keys = [item.key for item in series]
     python = sys.executable
     idle_cycles = 0
-    previous_progress: tuple[int, int, int, int, int] | None = None
+    previous_progress: tuple[int, int, int] | None = None
     total_new_audio = 0
 
     for cycle in range(1, args.max_cycles + 1):
@@ -151,35 +144,6 @@ def main() -> int:
             logger.finish(status="failed", message=f"转录阶段失败，退出码 {transcribe_code}")
             return transcribe_code or 2
 
-        normalize_code = run_step(
-            [
-                python,
-                "scripts/normalize_transcript.py",
-                "--workspace-root",
-                str(workspace_root),
-                *(["--series", args.series] if args.series else []),
-            ]
-        )
-        if normalize_code != 0:
-            logger.finish(status="failed", message=f"规范化阶段失败，退出码 {normalize_code}")
-            return normalize_code or 2
-
-        if not args.skip_split:
-            split_cmd = [
-                python,
-                "scripts/split_to_wechat_articles.py",
-                "--workspace-root",
-                str(workspace_root),
-                "--allow-pending-review",
-                *(["--series", args.series] if args.series else []),
-            ]
-            if args.expected_articles is not None:
-                split_cmd.extend(["--expected-articles", str(args.expected_articles)])
-            split_code = run_step(split_cmd)
-            if split_code != 0:
-                logger.finish(status="failed", message=f"拆稿阶段失败，退出码 {split_code}")
-                return split_code or 2
-
         manifest.load()
         summary = summarize_pipeline(manifest.entries, series_keys=series_keys)
         message = build_cycle_summary(cycle=cycle, new_audio=total_new_audio, summary=summary)
@@ -195,8 +159,6 @@ def main() -> int:
 
         progress = (
             int(summary["completed_transcripts"]),
-            int(summary["normalized"]),
-            int(summary["article_completed"]),
             int(summary["failed"]),
             int(summary["active"]),
         )

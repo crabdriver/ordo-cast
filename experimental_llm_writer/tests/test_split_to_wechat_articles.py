@@ -5,9 +5,9 @@ import os
 import unittest
 from unittest.mock import patch
 
-from audio_pipeline.article_splitter import ArticleDraft
+from experimental_llm_writer.article_splitter import ArticleDraft
 from audio_pipeline.manifest import PipelineManifest
-from scripts.split_to_wechat_articles import main
+from experimental_llm_writer.split_to_wechat_articles import main
 
 
 class SplitToWechatArticlesScriptTests(unittest.TestCase):
@@ -26,6 +26,7 @@ class SplitToWechatArticlesScriptTests(unittest.TestCase):
         document_root = workspace / "文稿"
         pipeline_dir = workspace / ".pipeline"
         pipeline_dir.mkdir(parents=True, exist_ok=True)
+        # Create experimental_llm_writer/prompts in the test workspace if needed, though they aren't read directly by the mock.
         (workspace / "prompts").mkdir(parents=True, exist_ok=True)
         (workspace / "prompts" / "split_wechat_articles.md").write_text("Issue={issue_number}\n{principles_text}\n{transcript_text}\n", encoding="utf-8")
         principles_path = document_root / "本地配置" / "文章拆解核心原则与心法.md"
@@ -105,9 +106,9 @@ class SplitToWechatArticlesScriptTests(unittest.TestCase):
                 "sys.argv",
                 ["split_to_wechat_articles.py", "--workspace-root", str(workspace), "--allow-pending-review"],
             ), patch(
-                "scripts.split_to_wechat_articles.build_text_client_from_env",
+                "experimental_llm_writer.split_to_wechat_articles.build_text_client_from_env",
                 return_value=object(),
-            ), patch("scripts.split_to_wechat_articles.llm_generate_articles", side_effect=fake_generate):
+            ), patch("experimental_llm_writer.split_to_wechat_articles.llm_generate_articles", side_effect=fake_generate):
                 exit_code = main()
 
             self.assertEqual(exit_code, 0)
@@ -165,7 +166,7 @@ class SplitToWechatArticlesScriptTests(unittest.TestCase):
                 },
                 clear=False,
             ), patch("sys.argv", ["split_to_wechat_articles.py", "--workspace-root", str(workspace)]), patch(
-                "scripts.split_to_wechat_articles.build_text_client_from_env",
+                "experimental_llm_writer.split_to_wechat_articles.build_text_client_from_env",
                 side_effect=AssertionError("不应调用 LLM"),
             ):
                 exit_code = main()
@@ -223,10 +224,10 @@ class SplitToWechatArticlesScriptTests(unittest.TestCase):
                 },
                 clear=False,
             ), patch("sys.argv", ["split_to_wechat_articles.py", "--workspace-root", str(workspace)]), patch(
-                "scripts.split_to_wechat_articles.build_text_client_from_env",
+                "experimental_llm_writer.split_to_wechat_articles.build_text_client_from_env",
                 return_value=object(),
             ), patch(
-                "scripts.split_to_wechat_articles.llm_generate_articles",
+                "experimental_llm_writer.split_to_wechat_articles.llm_generate_articles",
                 return_value=[ArticleDraft(title="关系底牌", body="新的正文")],
             ):
                 exit_code = main()
@@ -281,9 +282,9 @@ class SplitToWechatArticlesScriptTests(unittest.TestCase):
                     "14",
                 ],
             ), patch(
-                "scripts.split_to_wechat_articles.build_text_client_from_env",
+                "experimental_llm_writer.split_to_wechat_articles.build_text_client_from_env",
                 return_value=object(),
-            ), patch("scripts.split_to_wechat_articles.llm_generate_articles", side_effect=fake_generate):
+            ), patch("experimental_llm_writer.split_to_wechat_articles.llm_generate_articles", side_effect=fake_generate):
                 exit_code = main()
 
             self.assertEqual(exit_code, 2)
@@ -332,10 +333,10 @@ class SplitToWechatArticlesScriptTests(unittest.TestCase):
                 "sys.argv",
                 ["split_to_wechat_articles.py", "--workspace-root", str(workspace)],
             ), patch(
-                "scripts.split_to_wechat_articles.build_text_client_from_env",
+                "experimental_llm_writer.split_to_wechat_articles.build_text_client_from_env",
                 return_value=object(),
             ), patch(
-                "scripts.split_to_wechat_articles.llm_generate_articles",
+                "experimental_llm_writer.split_to_wechat_articles.llm_generate_articles",
                 return_value=[ArticleDraft(title="关系底牌", body="正文")],
             ):
                 exit_code = main()
@@ -376,7 +377,7 @@ class SplitToWechatArticlesScriptTests(unittest.TestCase):
                 },
                 clear=False,
             ), patch("sys.argv", ["split_to_wechat_articles.py", "--workspace-root", str(workspace)]), patch(
-                "scripts.split_to_wechat_articles.build_text_client_from_env",
+                "experimental_llm_writer.split_to_wechat_articles.build_text_client_from_env",
                 side_effect=AssertionError("不应调用 LLM"),
             ):
                 exit_code = main()

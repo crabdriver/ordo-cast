@@ -2,7 +2,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from audio_pipeline.article_splitter import (
+from experimental_llm_writer.article_splitter import (
     ArticleDraft,
     derive_article_source_dir_name,
     list_issue_article_files,

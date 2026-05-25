@@ -12,11 +12,11 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from audio_pipeline.article_splitter import derive_article_source_dir_name
 from audio_pipeline.config import (
     DEFAULT_ARTICLE_PRINCIPLES_DIRNAME,
     DEFAULT_ARTICLE_PRINCIPLES_FILENAME,
     PipelinePaths,
+    derive_article_source_dir_name,
     load_series_map,
     resolve_document_root,
     sanitize_title,

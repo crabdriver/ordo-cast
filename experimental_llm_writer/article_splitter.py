@@ -7,8 +7,8 @@ import shutil
 import uuid
 from typing import Iterable, List
 
-from .config import sanitize_filename, sanitize_title, strip_audio_prefix
-from .json_utils import parse_articles_payload
+from audio_pipeline.config import sanitize_filename, sanitize_title, strip_audio_prefix
+from audio_pipeline.json_utils import parse_articles_payload
 
 
 HEADING_PATTERN = re.compile(r"^\s*#\s+.+?$", re.MULTILINE)
@@ -147,4 +147,3 @@ def parse_article_drafts(raw_payload: str) -> List[ArticleDraft]:
         body = str(item.get("body", "")).strip()
         drafts.append(ArticleDraft(title=title, body=body))
     return drafts
-

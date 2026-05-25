@@ -247,3 +247,45 @@ def _expand_path_value(value: str, workspace_root: Path) -> Path:
 def _expand_environment_path(value: str) -> Path:
     return Path(os.path.expanduser(os.path.expandvars(value.strip())))
 
+
+def derive_article_source_dir_name(entry: dict) -> str:
+    """Derive a filesystem-safe directory name for article output from a manifest entry."""
+    source_name = str(entry.get("source_name") or "")
+    if source_name:
+        return sanitize_filename(Path(source_name).stem)
+    # Fallback: build from sequence + display_title
+    sequence = entry.get("sequence")
+    if isinstance(sequence, int):
+        issue_number = str(sequence).zfill(2)
+    elif isinstance(sequence, str) and sequence.isdigit():
+        issue_number = sequence.zfill(2)
+    else:
+        issue_number = "00"
+    display_title = sanitize_title(str(entry.get("display_title") or "").strip())
+    if not display_title:
+        display_title = sanitize_title(strip_audio_prefix(source_name))
+    display_title = display_title or "未命名转录稿"
+    return f"{issue_number}_{display_title}"
+
+
+def derive_issue_number_from_entry(entry: dict) -> str:
+    source_name = str(entry.get("source_name") or "")
+    if source_name:
+        prefix = Path(source_name).stem.split(".", 1)[0].strip()
+        if prefix:
+            return prefix.zfill(2) if len(prefix) <= 2 and prefix.isdigit() else prefix
+    sequence = entry.get("sequence")
+    if isinstance(sequence, int):
+        return str(sequence).zfill(2)
+    if isinstance(sequence, str) and sequence.isdigit():
+        return sequence.zfill(2)
+    return "00"
+
+
+def resolve_article_output_dir(base_dir: Path, series_name: str, source_dir_name: str | None = None) -> Path:
+    series_dir = base_dir / sanitize_title(series_name)
+    if not source_dir_name:
+        return series_dir
+    return series_dir / sanitize_filename(source_dir_name)
+
+

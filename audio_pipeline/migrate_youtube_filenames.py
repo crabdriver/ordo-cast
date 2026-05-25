@@ -5,8 +5,17 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
-from .article_splitter import derive_article_source_dir_name, derive_issue_number_from_entry, resolve_article_output_dir
-from .config import PipelinePaths, SeriesDefinition, build_title_key, load_series_map, sanitize_filename, sanitize_title
+from .config import (
+    PipelinePaths,
+    SeriesDefinition,
+    build_title_key,
+    derive_article_source_dir_name,
+    derive_issue_number_from_entry,
+    load_series_map,
+    resolve_article_output_dir,
+    sanitize_filename,
+    sanitize_title,
+)
 from .manifest import PipelineManifest
 from .normalization import compute_text_checksum
 

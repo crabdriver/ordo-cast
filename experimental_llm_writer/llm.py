@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any, Dict
 from urllib.parse import urlparse
 
-from .json_utils import parse_json_from_llm
+from audio_pipeline.json_utils import parse_json_from_llm
 
 
 def _normalize_openai_base_url(base_url: str) -> str:
@@ -73,4 +73,3 @@ class OpenAICompatibleTextClient:
         if isinstance(data, dict):
             return data
         raise ValueError("模型返回的不是 JSON 对象")
-

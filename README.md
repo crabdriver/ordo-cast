@@ -1,159 +1,120 @@
-# 全自动媒体流水线
+# 🎙️ Ordo Cast
 
-这个仓库提供一条可本地运行的内容流水线：`下载 YouTube 音频 -> 云端转录 -> 长稿规范化 -> 拆成公众号文章`。
+> **Ordo Creator Suite (创作者工作台) — 核心音视频采集与高精度转录引擎**
 
-## 开源边界
+`Ordo Cast` 是一个用于自动化下载网络音视频（如 YouTube 视频或播客音频）并调用高精度云端 ASR（火山引擎语音识别）将其转录为纯净 Markdown 录音稿的极速本地流水线。
 
-仓库只保留通用代码、测试、提示词和 `example` 模板。
+作为 `Ordo Creator Suite` 的第一站，它致力于解决创作者最核心的内容获取与转录痛点，提供工业级的并发火山 ASR 转录并发起以及多线程文件同步，以超低的价格和极高的识别准确率，把原始的音视频资源变成干净整洁的 Markdown 文稿。
 
-以下内容都属于本地运行态，不应提交：
+---
 
-- `.pipeline/series_map.json`
-- `.pipeline/youtube_sources.json`
-- `.pipeline/manifest.json`
-- `.pipeline/logs/`
-- `.pipeline/raw_transcripts/`
-- 你的本地原则文件
-- `DOCUMENT_ROOT` 下的全部文稿输出
+## ✨ 核心亮点
 
-## 环境与依赖
+- 📥 **多线程智能采集**：基于 `yt-dlp` 高效下载 YouTube 及各大音视频平台的音频资源，自动做人声提取与音频格式转换（FFmpeg 提供技术支撑）。
+- ⚡ **工业级 Volcano ASR 转录**：接入高性价比的字节跳动**火山引擎**高精度 ASR 转录接口。支持多线程并发提交任务、本地轮询和智能失败重试。
+- 📦 **本地文件级缓存**：内置本地流水线状态表（`manifest.json`），实现完美的「增量更新」，绝对不重复提交相同音频，节省接口费用。
+- 📝 **Markdown 结构化文稿**：转录好的长文稿自动按句分组并注入元数据信息（包括原始音频链接、转换事件等），支持干净的本地字符规则清洗。
+- 🛡️ **优雅的开源边界**：完全隔离配置文件与用户文稿资源，不小心提交配置文件的烦恼从此成为历史。
 
-- **Python 3.10+**（推荐；与仓库中类型标注习惯一致）。
-- 安装 Python 依赖（建议在虚拟环境中执行）：
+---
+
+## 📂 项目结构
+
+```
+.
+├── audio_pipeline/             # 核心 Python 库 (专注于下载、ASR 转录与任务控制)
+├── scripts/                    # 核心总控与脚本层
+│   ├── download_youtube.py     # YouTube 视频/音频多线程下载
+│   ├── transcribe_batch.py    # 批量并发火山 ASR 语音转录与状态轮询
+│   ├── run_full_pipeline.py    # 核心一条龙转录入口 (Download -> Transcribe)
+│   └── auto_run_pipeline.py    # 无人值守自动驾驶循环总控
+├── tests/                      # 核心引擎自动化测试集 (80+ 高覆盖度单元测试)
+└── experimental_llm_writer/    # 🧪 实验性 AI 撰稿与拆稿子项目 (未来独立为 Ordo Scribe)
+```
+
+---
+
+## 🧪 实验性子项目：`Ordo Scribe` (`experimental_llm_writer/`)
+
+大模型长稿高维语义清洗与拆稿润色功能已从本核心转录引擎中完全剥离，作为独立的**子项目子模块**，放置于 `experimental_llm_writer/` 目录下。
+
+它包含：
+- **`normalize_transcript.py`**：基于大模型的长稿智能清洗与语气词润色。
+- **`split_to_wechat_articles.py`**：高维语义拆稿引擎，将数万字的长稿智能拆解为符合微信公众号风格的、具备独立逻辑闭环的文章集。
+- 独立的用户提示词设计目录（`prompts/`）与完整的独立测试套件（`tests/`）。
+
+---
+
+## 🛠️ 快速开始
+
+### 1. 环境准备
+
+- **Python 3.10+** (推荐 3.12+)
+- **FFmpeg**：音频格式处理与采集依赖（macOS 可直接使用 `brew install ffmpeg` 安装）
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
+# 激活您的虚拟环境并安装核心依赖
+python3 -m venv .venv312
+source .venv312/bin/activate
 pip install -r requirements.txt
 ```
 
-- **ffmpeg**：YouTube 下载与部分音频处理依赖系统可用的 `ffmpeg`（macOS 常用 `brew install ffmpeg`；其他平台请从 [ffmpeg.org](https://ffmpeg.org) 安装并确保在 `PATH` 中）。
-- **yt-dlp**：由 `requirements.txt` 安装；流水线脚本会调用项目环境中的 `yt-dlp`。
+### 2. 填写配置
 
-## 本地准备
-
-1. 复制并填写环境变量模板。
-
+复制并填写配置文件：
 ```bash
+# 填写环境变量 (包含火山引擎与 OSS 密钥)
 cp .env.example .env
-```
 
-2. 准备本地系列配置和 YouTube 来源配置。
-
-```bash
+# 配置要下载和转录的自媒体栏目
 cp .pipeline/series_map.example.json .pipeline/series_map.json
 cp .pipeline/youtube_sources.example.json .pipeline/youtube_sources.json
 ```
 
-3. 把你的拆稿原则保存到本地路径。
+### 3. 一键运转
 
-- 默认路径：`${DOCUMENT_ROOT:-$HOME/文稿}/本地配置/文章拆解核心原则与心法.md`
-- 可参考模板：`prompts/article_principles.example.md`
-
-## 关键配置
-
-- `DOCUMENT_ROOT`：统一文稿根目录，默认是 `$HOME/文稿`
-- `ARTICLE_PRINCIPLES_PATH`：拆稿原则文件路径，不设置时走默认路径
-- `VOLCENGINE_*`：火山 ASR 配置
-- `OSS_*`：阿里云 OSS 配置
-- `CONTENT_LLM_*`：正文清洗和拆稿用的 LLM 配置
-
-## 输出结构
-
-- 转录长稿：`$DOCUMENT_ROOT/录音稿/<系列>/<与源音频同名的>.md`
-- 拆解文章：`$DOCUMENT_ROOT/拆解文章/<系列>/<期号_标题>/<期号-文章序号_标题>.md`
-- 运行态：仓库内 `.pipeline/`
-
-## 常用命令
-
-下载指定系列：
+您可以通过单步脚本独立控制流程，也可以直接运行全自动一键流水线：
 
 ```bash
-python3 scripts/download_youtube.py --series tiandi
+# 1. 运行核心一条龙转录流水线 (下载 -> 批量转录)
+python3 scripts/run_full_pipeline.py --series example-series
+
+# 2. 或者在服务器/本地挂起无人值守自动驾驶
+python3 scripts/auto_run_pipeline.py --series example-series
 ```
 
-批量转录并等待完成：
+---
 
+## 📈 常用单步命令手册
+
+| 功能描述 | 核心命令 | 核心产物 |
+| :--- | :--- | :--- |
+| **视频音频采集** | `python3 scripts/download_youtube.py` | 下载好的人声 MP3 音频文件 |
+| **云端并发转录** | `python3 scripts/transcribe_batch.py --wait` | 火山 ASR 识别出的原始 JSON 并同步下载 |
+| **长文稿生成** | 上方转录完成后自动合成 | `$DOCUMENT_ROOT/录音稿/<系列>/<音频名>.md` |
+| **数据迁移升级** | `python3 scripts/migrate_open_source_layout.py` | 规范化并自动同步整理您的历史旧转录文稿 |
+
+---
+
+## 🛡️ 持续集成与质量保证
+
+项目采用最严苛的代码规范与持续集成，每一次代码更改都会在 GitHub Actions 中自动运行测试。
+
+您可以在本地激活虚拟环境并执行：
 ```bash
-python3 scripts/transcribe_batch.py --wait --series tiandi
+# 1. 运行核心转录与下载库测试套件 (80 个测试)
+.venv312/bin/python3 -m unittest discover -s tests
+
+# 2. 运行实验性 AI 撰稿子项目测试套件 (24 个测试)
+.venv312/bin/python3 -m unittest discover -s experimental_llm_writer/tests
 ```
 
-规范化转录稿：
+---
 
-```bash
-python3 scripts/normalize_transcript.py --series tiandi
-```
+## 🏷️ 关于 Ordo Creator Suite
 
-自动拆稿：
+- **`Ordo Cast`** (本项目) ── 把音视频变成干净的 Markdown 录音稿
+- **`Ordo Scribe`** (筹备中) ── 大模型高维语义长稿深度撰稿与智能拆稿器
+- **`Ordo Publish`** (开发中) ── 跨社交平台多端本地优先一键分发助手
 
-```bash
-python3 scripts/split_to_wechat_articles.py --series tiandi
-```
-
-拆稿行为说明：
-
-- **待复核**：manifest 中 `review_status=pending` 时，默认**跳过**拆稿；若要对未复核长稿拆稿，请加 `--allow-pending-review`（全链路 `run_full_pipeline.py` 亦支持同名参数）。
-- **固定篇数**：需要每期恰好拆成 14 篇时，可在 `.env` 设置 `EXPECTED_ARTICLES_PER_TRANSCRIPT=14`，或运行 `split_to_wechat_articles.py --expected-articles 14`。篇数与模型输出不一致时会自动重试；最终仍不一致则报错且**不写入**文章文件。
-- **残留旧稿**：若磁盘上存在残留或部分旧拆稿目录，脚本会自动归档到 `.pipeline/recovery/articles/` 后重试，而不是直接要求人工清理。
-
-一条命令跑完整链路：
-
-```bash
-python3 scripts/run_full_pipeline.py --series tiandi
-```
-
-如果你想用“一次性完整链路”直接走全自动语义：
-
-```bash
-python3 scripts/run_full_pipeline.py --series tiandi --full-auto --expected-articles 14
-```
-
-其中 `--full-auto` 会自动把拆稿阶段切到 `--allow-pending-review`，避免因为 `review_status=pending` 被静默跳过。
-
-无人值守自动驾驶入口：
-
-```bash
-python3 scripts/auto_run_pipeline.py --series tiandi --expected-articles 14
-```
-
-`auto_run_pipeline.py` 会循环执行下载、转录、规范化、拆稿，并在以下场景退出：
-
-- `0`：本轮已收敛，转录/规范化/拆稿都到达可接受终态。
-- `3`：流程仍未完全收敛，但连续多轮无进展或达到最大自动驾驶轮次。
-- `2`：存在明确失败（配置错误、下载失败、转录失败、拆稿失败等）。
-
-## 迁移旧数据
-
-如果你之前把转录稿和拆稿文章放在仓库里，先运行：
-
-```bash
-python3 scripts/migrate_open_source_layout.py --workspace-root .
-```
-
-这个脚本会做三件事：
-
-- 把旧的转录稿迁到 `$DOCUMENT_ROOT/录音稿/...`
-- 把旧的拆稿文章迁到 `$DOCUMENT_ROOT/拆解文章/<系列>/<源录音稿文件夹>/...`
-- 把仓库根下的 `00_文章拆解核心原则与心法.md` 复制到新的本地原则路径
-
-若历史录音稿仍使用「期号_标题」等旧命名，可统一为与 YouTube 源音频同名：
-
-```bash
-python3 scripts/migrate_transcript_names_to_youtube.py --workspace-root .
-```
-
-可先加 `--dry-run` 预览变更；脚本会同步更新 `.pipeline/manifest.json` 中的路径。
-
-## 持续集成
-
-若仓库托管在 GitHub 并已启用 Actions，推送到 `master` / `main` 或打开针对这些分支的 PR 时，会在 Python 3.10、3.11、3.12 下自动运行 `python -m unittest discover -s tests`。
-
-## 变更记录
-
-见仓库根目录 [`CHANGELOG.md`](CHANGELOG.md)。
-
-## 验证建议
-
-1. 先只跑一个系列，确认新文件已经落到 `文稿/` 下。
-2. 再重跑一次同一系列，确认不会因为路径迁移而重复生成混乱文件。
-3. 最后再放开全部系列执行总控脚本或 `auto_run_pipeline.py`。
+**在秩序中创作，在高效中分享。**
