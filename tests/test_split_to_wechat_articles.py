@@ -11,6 +11,8 @@ from scripts.split_to_wechat_articles import main
 
 
 class SplitToWechatArticlesScriptTests(unittest.TestCase):
+    SOURCE_NAME = "20260328. 关系底牌 [abc123].mp3"
+    ARTICLE_DIR_NAME = "20260328. 关系底牌 [abc123]"
     def setUp(self) -> None:
         # 避免本机 .env 中 EXPECTED_ARTICLES_PER_TRANSCRIPT 等影响退出码断言
         self._dotenv_patcher = patch("dotenv.load_dotenv", lambda *_a, **_k: None)
@@ -64,10 +66,12 @@ class SplitToWechatArticlesScriptTests(unittest.TestCase):
                 {
                     "status": "completed",
                     "series_key": "tiandi",
-                    "source_name": "20260328. 关系底牌 [abc123].mp3",
+                    "source_name": self.SOURCE_NAME,
                     "sequence": 3,
                     "display_title": "关系底牌",
-                    "transcript_path": str(Path(tmp) / "文稿" / "录音稿" / "天地大道" / "03_关系底牌.md"),
+                    "transcript_path": str(
+                        Path(tmp) / "文稿" / "录音稿" / "天地大道" / f"{Path(self.SOURCE_NAME).stem}.md"
+                    ),
                     "article_status": "pending",
                     "article_paths": [],
                     "review_status": "pending",
@@ -107,7 +111,7 @@ class SplitToWechatArticlesScriptTests(unittest.TestCase):
                 exit_code = main()
 
             self.assertEqual(exit_code, 0)
-            self.assertEqual(captured["issue_number"], "03")
+            self.assertEqual(captured["issue_number"], "20260328")
             self.assertIn("文章拆解核心原则", captured["principles_text"])
             manifest = PipelineManifest(workspace / ".pipeline" / "manifest.json")
             manifest.load()
@@ -115,13 +119,25 @@ class SplitToWechatArticlesScriptTests(unittest.TestCase):
             self.assertEqual(entry["article_status"], "completed")
             self.assertEqual(
                 Path(entry["article_paths"][0]),
-                workspace / "文稿" / "拆解文章" / "天地大道" / "03_关系底牌" / "03-01_关系底牌.md",
+                workspace
+                / "文稿"
+                / "拆解文章"
+                / "天地大道"
+                / self.ARTICLE_DIR_NAME
+                / "20260328-01_关系底牌.md",
             )
             self.assertTrue(Path(entry["article_paths"][0]).exists())
 
     def test_main_repairs_manifest_when_all_article_files_already_exist(self) -> None:
         with TemporaryDirectory() as tmp:
-            article_path = Path(tmp) / "文稿" / "拆解文章" / "天地大道" / "03_关系底牌" / "03-01_关系底牌.md"
+            article_path = (
+                Path(tmp)
+                / "文稿"
+                / "拆解文章"
+                / "天地大道"
+                / self.ARTICLE_DIR_NAME
+                / "20260328-01_关系底牌.md"
+            )
             article_path.parent.mkdir(parents=True, exist_ok=True)
             article_path.write_text("已存在文章\n", encoding="utf-8")
             workspace = self._prepare_workspace(
@@ -129,10 +145,12 @@ class SplitToWechatArticlesScriptTests(unittest.TestCase):
                 {
                     "status": "completed",
                     "series_key": "tiandi",
-                    "source_name": "20260328. 关系底牌 [abc123].mp3",
+                    "source_name": self.SOURCE_NAME,
                     "sequence": 3,
                     "display_title": "关系底牌",
-                    "transcript_path": str(Path(tmp) / "文稿" / "录音稿" / "天地大道" / "03_关系底牌.md"),
+                    "transcript_path": str(
+                        Path(tmp) / "文稿" / "录音稿" / "天地大道" / f"{Path(self.SOURCE_NAME).stem}.md"
+                    ),
                     "article_status": "pending",
                     "article_paths": [str(article_path)],
                     "review_status": "pending",
@@ -161,8 +179,22 @@ class SplitToWechatArticlesScriptTests(unittest.TestCase):
 
     def test_main_marks_failed_when_article_paths_are_partially_missing(self) -> None:
         with TemporaryDirectory() as tmp:
-            existing_path = Path(tmp) / "文稿" / "拆解文章" / "天地大道" / "03_关系底牌" / "03-01_关系底牌.md"
-            missing_path = Path(tmp) / "文稿" / "拆解文章" / "天地大道" / "03_关系底牌" / "03-02_第二篇.md"
+            existing_path = (
+                Path(tmp)
+                / "文稿"
+                / "拆解文章"
+                / "天地大道"
+                / self.ARTICLE_DIR_NAME
+                / "20260328-01_关系底牌.md"
+            )
+            missing_path = (
+                Path(tmp)
+                / "文稿"
+                / "拆解文章"
+                / "天地大道"
+                / self.ARTICLE_DIR_NAME
+                / "20260328-02_第二篇.md"
+            )
             existing_path.parent.mkdir(parents=True, exist_ok=True)
             existing_path.write_text("已存在文章\n", encoding="utf-8")
             workspace = self._prepare_workspace(
@@ -170,10 +202,12 @@ class SplitToWechatArticlesScriptTests(unittest.TestCase):
                 {
                     "status": "completed",
                     "series_key": "tiandi",
-                    "source_name": "20260328. 关系底牌 [abc123].mp3",
+                    "source_name": self.SOURCE_NAME,
                     "sequence": 3,
                     "display_title": "关系底牌",
-                    "transcript_path": str(Path(tmp) / "文稿" / "录音稿" / "天地大道" / "03_关系底牌.md"),
+                    "transcript_path": str(
+                        Path(tmp) / "文稿" / "录音稿" / "天地大道" / f"{Path(self.SOURCE_NAME).stem}.md"
+                    ),
                     "article_status": "completed",
                     "article_paths": [str(existing_path), str(missing_path)],
                     "review_status": "reviewed",
@@ -212,10 +246,12 @@ class SplitToWechatArticlesScriptTests(unittest.TestCase):
                 {
                     "status": "completed",
                     "series_key": "tiandi",
-                    "source_name": "20260328. 关系底牌 [abc123].mp3",
+                    "source_name": self.SOURCE_NAME,
                     "sequence": 3,
                     "display_title": "关系底牌",
-                    "transcript_path": str(Path(tmp) / "文稿" / "录音稿" / "天地大道" / "03_关系底牌.md"),
+                    "transcript_path": str(
+                        Path(tmp) / "文稿" / "录音稿" / "天地大道" / f"{Path(self.SOURCE_NAME).stem}.md"
+                    ),
                     "article_status": "pending",
                     "article_paths": [],
                     "review_status": "reviewed",
@@ -258,7 +294,14 @@ class SplitToWechatArticlesScriptTests(unittest.TestCase):
 
     def test_main_archives_disk_only_residual_articles_before_regenerating(self) -> None:
         with TemporaryDirectory() as tmp:
-            residual_path = Path(tmp) / "文稿" / "拆解文章" / "天地大道" / "03_关系底牌" / "03-01_旧文章.md"
+            residual_path = (
+                Path(tmp)
+                / "文稿"
+                / "拆解文章"
+                / "天地大道"
+                / self.ARTICLE_DIR_NAME
+                / "20260328-01_旧文章.md"
+            )
             residual_path.parent.mkdir(parents=True, exist_ok=True)
             residual_path.write_text("旧稿\n", encoding="utf-8")
             workspace = self._prepare_workspace(
@@ -266,10 +309,12 @@ class SplitToWechatArticlesScriptTests(unittest.TestCase):
                 {
                     "status": "completed",
                     "series_key": "tiandi",
-                    "source_name": "20260328. 关系底牌 [abc123].mp3",
+                    "source_name": self.SOURCE_NAME,
                     "sequence": 3,
                     "display_title": "关系底牌",
-                    "transcript_path": str(Path(tmp) / "文稿" / "录音稿" / "天地大道" / "03_关系底牌.md"),
+                    "transcript_path": str(
+                        Path(tmp) / "文稿" / "录音稿" / "天地大道" / f"{Path(self.SOURCE_NAME).stem}.md"
+                    ),
                     "article_status": "pending",
                     "article_paths": [],
                     "review_status": "reviewed",
@@ -310,10 +355,12 @@ class SplitToWechatArticlesScriptTests(unittest.TestCase):
                 {
                     "status": "completed",
                     "series_key": "tiandi",
-                    "source_name": "20260328. 关系底牌 [abc123].mp3",
+                    "source_name": self.SOURCE_NAME,
                     "sequence": 3,
                     "display_title": "关系底牌",
-                    "transcript_path": str(Path(tmp) / "文稿" / "录音稿" / "天地大道" / "03_关系底牌.md"),
+                    "transcript_path": str(
+                        Path(tmp) / "文稿" / "录音稿" / "天地大道" / f"{Path(self.SOURCE_NAME).stem}.md"
+                    ),
                     "article_status": "pending",
                     "article_paths": [],
                     "review_status": "pending",

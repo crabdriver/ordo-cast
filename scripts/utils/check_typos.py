@@ -10,12 +10,32 @@ except ImportError:
     print("请先安装 openai 库: pip install openai")
     exit(1)
 
-# 配置你的大模型 API (建议使用 DeepSeek 或 火山引擎的通义/豆包等，成本低且准确)
-API_KEY = "your_api_key_here"  # 替换为你的火山引擎或 DeepSeek API Key
-BASE_URL = "https://ark.cn-beijing.volces.com/api/v3"  # 替换为你的 Base URL (例如火山引擎)
-MODEL = "your_model_endpoint"  # 替换为你的模型名 (例如 ep-xxx)
+# Resolve workspace root dynamically (parent of scripts/)
+script_dir = os.path.dirname(os.path.abspath(__file__))
+workspace_root = os.path.dirname(os.path.dirname(script_dir))
 
-client = OpenAI(api_key=API_KEY, base_url=BASE_URL)
+def load_env(env_path: str):
+    """Simple parser to load .env file into os.environ without third-party dependencies."""
+    if os.path.exists(env_path):
+        with open(env_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#'):
+                    parts = line.split('=', 1)
+                    if len(parts) == 2:
+                        key = parts[0].strip()
+                        val = parts[1].strip().strip('"').strip("'")
+                        # Only set if not already set in environment
+                        if key not in os.environ:
+                            os.environ[key] = val
+
+# Load workspace .env if available
+load_env(os.path.join(workspace_root, ".env"))
+
+# 配置大模型 API (从环境变量读取，或回退到默认设置)
+API_KEY = os.getenv("TYPO_API_KEY") or os.getenv("CONTENT_LLM_API_KEY") or "your_api_key_here"
+BASE_URL = os.getenv("TYPO_BASE_URL") or os.getenv("CONTENT_LLM_BASE_URL") or "https://ark.cn-beijing.volces.com/api/v3"
+MODEL = os.getenv("TYPO_MODEL") or os.getenv("CONTENT_LLM_MODEL") or "your_model_endpoint"
 
 PROMPT_TEMPLATE = """
 你是一个专业的中文文字校对专家。请检查以下 Markdown 文本中的错别字、语病和标点符号错误。
@@ -36,10 +56,15 @@ PROMPT_TEMPLATE = """
 {text}
 """
 
-def check_text_for_typos(text: str) -> List[Dict]:
+def check_text_for_typos(client: OpenAI, text: str) -> List[Dict]:
     if not text.strip():
         return []
     
+    # Check if API Key is placeholder
+    if API_KEY == "your_api_key_here" or not API_KEY:
+        print("警告: 未检测到有效的 API_KEY，请在 .env 中配置 CONTENT_LLM_API_KEY 或 TYPO_API_KEY。")
+        return []
+
     try:
         response = client.chat.completions.create(
             model=MODEL,
@@ -65,11 +90,20 @@ def check_text_for_typos(text: str) -> List[Dict]:
         return []
 
 def main():
-    workspace_dir = r"d:\tiandiworkspace\拆解后文章"
+    workspace_dir = os.path.join(workspace_root, "拆解后文章")
+    if not os.path.exists(workspace_dir):
+        print(f"错误: 拆解后文章的目录不存在于 {workspace_dir}。请先运行拆稿脚本。")
+        return
+        
     md_files = glob.glob(os.path.join(workspace_dir, "*.md"))
     
     print(f"找到 {len(md_files)} 个 Markdown 文件，开始进行错别字检查...")
     
+    if not md_files:
+        print("没有找到待校对的 .md 文件。")
+        return
+        
+    client = OpenAI(api_key=API_KEY, base_url=BASE_URL)
     report_lines = ["# 错别字检测报告\n"]
     
     for file_path in md_files:
@@ -81,7 +115,7 @@ def main():
             
         # 简单分段以避免超出 Token 限制（如果文章很长）
         # 这里为了简单，假设文章都在较合理的长度（如2000字以内），直接发送
-        typos = check_text_for_typos(content)
+        typos = check_text_for_typos(client, content)
         
         if typos:
             report_lines.append(f"## {filename}\n")
@@ -96,7 +130,7 @@ def main():
         # 避免 API 频率限制
         time.sleep(1)
         
-    report_path = os.path.join(r"d:\tiandiworkspace", "typos_report.md")
+    report_path = os.path.join(workspace_root, "typos_report.md")
     with open(report_path, 'w', encoding='utf-8') as f:
         f.write("\n".join(report_lines))
         

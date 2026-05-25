@@ -67,7 +67,7 @@ class VolcengineBigModelProviderTests(unittest.TestCase):
 
             signed_url = uploader.upload(audio_path)
 
-        self.assertRegex(events["put"][0], r"^audio-source/天地大道/0000_[0-9a-f]{16}\.mp3$")
+        self.assertRegex(events["put"][0], r"^audio-source/天地大道/demo_[0-9a-f]{16}\.mp3$")
         self.assertEqual(events["put"][2]["x-oss-forbid-overwrite"], "true")
         self.assertEqual(events["put"][2]["x-oss-storage-class"], "Standard")
         self.assertEqual(events["sign"], ("GET", events["put"][0], 1800, True))
@@ -114,7 +114,7 @@ class VolcengineBigModelProviderTests(unittest.TestCase):
 
             signed_url = uploader.upload(audio_path)
 
-        self.assertRegex(events["put"][0], r"^audio-source/人类说明书/0000_[0-9a-f]{16}\.mp3$")
+        self.assertRegex(events["put"][0], r"^audio-source/人类说明书/demo_[0-9a-f]{16}\.mp3$")
         self.assertEqual(events["put"][2]["x-oss-storage-class"], "Standard")
         self.assertEqual(events["get"], events["put"][0])
         self.assertEqual(events["sign"], ("GET", events["put"][0], 1800, True))
@@ -209,7 +209,7 @@ class VolcengineBigModelProviderTests(unittest.TestCase):
             signed_url = uploader.upload(audio_path)
 
         self.assertEqual(events["attempts"], 3)
-        self.assertRegex(events["put"][0], r"^audio-source/人类说明书-问道/0000_[0-9a-f]{16}\.mp3$")
+        self.assertRegex(events["put"][0], r"^audio-source/人类说明书-问道/demo_[0-9a-f]{16}\.mp3$")
         self.assertEqual(events["put"][2]["x-oss-forbid-overwrite"], "true")
         self.assertEqual(events["put"][2]["x-oss-storage-class"], "Standard")
         self.assertEqual(events["sign"], ("GET", events["put"][0], 1800, True))
@@ -243,7 +243,7 @@ class VolcengineBigModelProviderTests(unittest.TestCase):
 
             signed_url = uploader.upload(audio_path)
 
-        self.assertRegex(events["put"][0], r"^audio-source/天地大道/0000_[0-9a-f]{16}\.mp3$")
+        self.assertRegex(events["put"][0], r"^audio-source/天地大道/demo_[0-9a-f]{16}\.mp3$")
         self.assertEqual(events["put"][2]["x-oss-forbid-overwrite"], "true")
         self.assertEqual(events["put"][2]["x-oss-storage-class"], "Standard")
         self.assertEqual(events["sign"], ("GET", events["put"][0], 1800, True))

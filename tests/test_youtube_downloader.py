@@ -180,7 +180,7 @@ class YouTubeDownloaderTests(unittest.TestCase):
 
             self.assertEqual(calls, [])
 
-    def test_sync_source_renames_new_downloads_to_next_numeric_sequence(self) -> None:
+    def test_sync_source_keeps_youtube_filename_for_new_downloads(self) -> None:
         calls: list[tuple[list[str], Path]] = []
 
         def fake_runner(command: list[str], cwd: Path) -> None:
@@ -224,10 +224,10 @@ class YouTubeDownloaderTests(unittest.TestCase):
 
             downloader.sync_source(source, series)
 
-            self.assertTrue((audio_dir / "03. 新课 A.mp3").exists())
-            self.assertTrue((audio_dir / "04. 新课 B.mp3").exists())
-            self.assertFalse((audio_dir / "20260101. 新课 A [aaa111].mp3").exists())
-            self.assertFalse((audio_dir / "20260102. 新课 B [bbb222].mp3").exists())
+            self.assertTrue((audio_dir / "20260101. 新课 A [aaa111].mp3").exists())
+            self.assertTrue((audio_dir / "20260102. 新课 B [bbb222].mp3").exists())
+            self.assertFalse((audio_dir / "03. 新课 A.mp3").exists())
+            self.assertFalse((audio_dir / "04. 新课 B.mp3").exists())
             self.assertEqual(len(calls), 1)
 
     def test_sync_many_marks_series_unchanged_when_no_new_audio_downloaded(self) -> None:
@@ -309,9 +309,9 @@ class YouTubeDownloaderTests(unittest.TestCase):
             status = downloader.sync_source(source, series)
 
             self.assertEqual(status, "downloaded")
-            self.assertTrue((audio_dir / "01. 新课 A.mp3").exists())
-            self.assertEqual((audio_dir / "01. 新课 A.mp3").read_bytes(), b"a")
-            self.assertFalse((audio_dir / "20260101. 新课 A [aaa111].mp3").exists())
+            self.assertTrue((audio_dir / "20260101. 新课 A [aaa111].mp3").exists())
+            self.assertEqual((audio_dir / "20260101. 新课 A [aaa111].mp3").read_bytes(), b"a")
+            self.assertFalse((audio_dir / "01. 新课 A.mp3").exists())
 
     def test_sync_source_writes_internal_task_log_events(self) -> None:
         def fake_runner(command: list[str], cwd: Path) -> None:

@@ -67,7 +67,7 @@ class ArticleSplitterTests(unittest.TestCase):
         self.assertEqual(resolve_article_output_dir(base, "天地大道", "03_关系底牌"), base / "天地大道" / "03_关系底牌")
         self.assertEqual(resolve_article_output_dir(base, "人类说明书", "03_关系底牌"), base / "人类说明书" / "03_关系底牌")
 
-    def test_derive_article_source_dir_name_uses_issue_number_and_display_title(self) -> None:
+    def test_derive_article_source_dir_name_uses_youtube_source_stem(self) -> None:
         self.assertEqual(
             derive_article_source_dir_name(
                 {
@@ -76,7 +76,7 @@ class ArticleSplitterTests(unittest.TestCase):
                     "source_name": "20260328. 关系底牌 [abc123].mp3",
                 }
             ),
-            "03_关系底牌",
+            "20260328. 关系底牌 [abc123]",
         )
 
     def test_write_articles_uses_numbered_filenames_and_strips_h1_heading(self) -> None:

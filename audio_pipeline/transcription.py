@@ -9,7 +9,7 @@ from typing import Any, Callable, Dict, Optional, Tuple
 import uuid
 from urllib import request
 
-from .config import extract_sequence_prefix
+from .config import sanitize_filename
 from .hashing import sha1_file
 
 HTTP_DEFAULT_TIMEOUT = 60.0
@@ -141,10 +141,10 @@ class AliyunOssSignedUploader(AbstractAudioUploader):
         return "/".join(parts)
 
     def _build_object_filename(self, audio_path: Path) -> str:
-        sequence = extract_sequence_prefix(audio_path.name) or 0
         digest = sha1_file(audio_path)[:16]
         suffix = audio_path.suffix.lower() or ".mp3"
-        return f"{sequence:04d}_{digest}{suffix}"
+        stem = sanitize_filename(audio_path.stem)[:120]
+        return f"{stem}_{digest}{suffix}"
 
     def _get_bucket(self) -> Any:
         if self._bucket is not None:

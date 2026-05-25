@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, List
 
-from .config import SeriesDefinition, extract_numeric_prefix, extract_sequence_prefix
+from .config import SeriesDefinition, extract_sequence_prefix
 
 
 @dataclass(frozen=True)
@@ -45,8 +45,7 @@ def scan_audio_sources(series_definitions: Iterable[SeriesDefinition]) -> List[A
                 source_path = max(candidates, key=lambda item: (item[0].stat().st_mtime_ns, item[0].name))[0]
                 display_title = candidates[0][2]
                 known_sequences = [sequence for _, sequence, _ in candidates if sequence is not None]
-                fallback_sequence = extract_numeric_prefix(source_path.name) or 0
-                sequence = min(known_sequences) if known_sequences else fallback_sequence
+                sequence = min(known_sequences) if known_sequences else 0
                 stat = source_path.stat()
             except FileNotFoundError:
                 continue
@@ -58,7 +57,7 @@ def scan_audio_sources(series_definitions: Iterable[SeriesDefinition]) -> List[A
                     title_key=title_key,
                     sequence=sequence,
                     title=display_title,
-                    transcript_path=series.build_transcript_path(sequence, display_title),
+                    transcript_path=series.build_transcript_path(source_path.name),
                     audio_size=stat.st_size,
                     audio_mtime_ns=stat.st_mtime_ns,
                 )

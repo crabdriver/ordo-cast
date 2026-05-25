@@ -7,7 +7,7 @@ import subprocess
 import sys
 from typing import Callable, Iterable, List
 
-from audio_pipeline.config import SeriesDefinition, extract_numeric_prefix
+from audio_pipeline.config import SeriesDefinition
 from audio_pipeline.task_logging import PipelineTaskLogger
 
 
@@ -113,7 +113,7 @@ class YouTubeBatchDownloader:
         ]
         self._log(f"[start] {series.key}: {source.channel_url}")
         self.command_runner(command, self.workspace_root)
-        renamed = self._rename_new_downloads(series, existing_audio_names)
+        renamed = self._finalize_new_downloads(series, existing_audio_names)
         if renamed:
             self._log(f"[done] {series.key}: 新增 {len(renamed)} 个音频 -> {series.audio_dir}")
             self._log_task(
@@ -151,7 +151,7 @@ class YouTubeBatchDownloader:
             results[series.key] = status
         return results
 
-    def _rename_new_downloads(self, series: SeriesDefinition, existing_audio_names: set[str]) -> list[Path]:
+    def _finalize_new_downloads(self, series: SeriesDefinition, existing_audio_names: set[str]) -> list[Path]:
         existing_audio_paths = {
             path.name: path
             for path in series.audio_dir.iterdir()
@@ -171,49 +171,31 @@ class YouTubeBatchDownloader:
         if not new_audio_files:
             return []
 
-        next_sequence = self._next_sequence(existing_audio_names)
-        renamed_targets: list[Path] = []
+        finalized_targets: list[Path] = []
         for path in new_audio_files:
             title = self._derive_download_title(series, path)
             if title in existing_paths_by_title:
-                target = self._replacement_target(existing_paths_by_title[title])
                 for existing_path in existing_paths_by_title[title]:
-                    if existing_path.exists():
+                    if existing_path.exists() and existing_path != path:
                         existing_path.unlink()
-                path.rename(target)
-                renamed_targets.append(target)
-                existing_paths_by_title[title] = [target]
+                existing_paths_by_title[title] = [path]
                 self._log_task(
                     stage="replace_duplicate_audio",
                     status="success",
-                    message="用新下载音频替换旧编号音频",
+                    message="用新下载音频替换同标题旧音频",
                     series=series,
-                    title_key=series.build_title_identity(target.name).title_key,
+                    title_key=series.build_title_identity(path.name).title_key,
                     display_title=title,
-                    source_path=str(target),
+                    source_path=str(path),
                 )
-                continue
-            target = series.audio_dir / f"{next_sequence:0{series.prefix_width}d}. {title}.mp3"
-            path.rename(target)
-            renamed_targets.append(target)
-            existing_paths_by_title[title] = [target]
-            next_sequence += 1
-        return renamed_targets
+            else:
+                existing_paths_by_title[title] = [path]
+            finalized_targets.append(path)
+        return finalized_targets
 
     @staticmethod
     def _derive_download_title(series: SeriesDefinition, path: Path) -> str:
         return series.build_title_identity(path.name).display_title
-
-    @staticmethod
-    def _replacement_target(paths: list[Path]) -> Path:
-        return sorted(
-            paths,
-            key=lambda path: (
-                extract_numeric_prefix(path.name) is None,
-                extract_numeric_prefix(path.name) or 10**9,
-                path.name,
-            ),
-        )[0]
 
     @staticmethod
     def _list_audio_names(audio_dir: Path) -> set[str]:
@@ -222,14 +204,6 @@ class YouTubeBatchDownloader:
             for path in audio_dir.iterdir()
             if path.is_file() and path.suffix.lower() == ".mp3" and not path.name.startswith(".")
         }
-
-    @staticmethod
-    def _next_sequence(existing_audio_names: set[str]) -> int:
-        numbered = [extract_numeric_prefix(name) for name in existing_audio_names]
-        numeric_values = [value for value in numbered if value is not None]
-        if numeric_values:
-            return max(numeric_values) + 1
-        return len(existing_audio_names) + 1
 
     def _log(self, message: str) -> None:
         self.log_path.parent.mkdir(parents=True, exist_ok=True)

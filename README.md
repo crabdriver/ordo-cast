@@ -60,7 +60,7 @@ cp .pipeline/youtube_sources.example.json .pipeline/youtube_sources.json
 
 ## 输出结构
 
-- 转录长稿：`$DOCUMENT_ROOT/录音稿/<系列>/<期号_标题>.md`
+- 转录长稿：`$DOCUMENT_ROOT/录音稿/<系列>/<与源音频同名的>.md`
 - 拆解文章：`$DOCUMENT_ROOT/拆解文章/<系列>/<期号_标题>/<期号-文章序号_标题>.md`
 - 运行态：仓库内 `.pipeline/`
 
@@ -135,6 +135,14 @@ python3 scripts/migrate_open_source_layout.py --workspace-root .
 - 把旧的转录稿迁到 `$DOCUMENT_ROOT/录音稿/...`
 - 把旧的拆稿文章迁到 `$DOCUMENT_ROOT/拆解文章/<系列>/<源录音稿文件夹>/...`
 - 把仓库根下的 `00_文章拆解核心原则与心法.md` 复制到新的本地原则路径
+
+若历史录音稿仍使用「期号_标题」等旧命名，可统一为与 YouTube 源音频同名：
+
+```bash
+python3 scripts/migrate_transcript_names_to_youtube.py --workspace-root .
+```
+
+可先加 `--dry-run` 预览变更；脚本会同步更新 `.pipeline/manifest.json` 中的路径。
 
 ## 持续集成
 

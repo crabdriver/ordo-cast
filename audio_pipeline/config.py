@@ -12,6 +12,7 @@ from typing import Callable, Iterable, List
 TITLE_CLEANUP_PATTERN = re.compile(r"[「」【】\[\]（）()<>《》]")
 WHITESPACE_PATTERN = re.compile(r"\s+")
 NUMERIC_PREFIX_PATTERN = re.compile(r"^\s*(\d+)")
+INVALID_FILENAME_CHARS = re.compile(r'[/\\:*?"<>|]')
 YOUTUBE_ID_SUFFIX_PATTERN = re.compile(r"\s+\[[^\]]+\]$")
 TITLE_KEY_FILTER_PATTERN = re.compile(r"[^\w]+", re.UNICODE)
 LEADING_SEPARATOR_PATTERN = re.compile(r"^[\s\.\-_、·:：]+")
@@ -50,9 +51,9 @@ class SeriesDefinition:
     def build_title_identity(self, source_name: str) -> TitleIdentity:
         return build_title_identity(self.key, self.display_name, source_name, self.title_prefixes)
 
-    def build_transcript_path(self, sequence: int, display_title: str) -> Path:
-        safe_title = sanitize_title(display_title)
-        return self.transcript_dir / f"{sequence:0{self.prefix_width}d}_{safe_title}.md"
+    def build_transcript_path(self, source_name: str) -> Path:
+        stem = sanitize_filename(Path(source_name).stem)
+        return self.transcript_dir / f"{stem}.md"
 
 
 @dataclass(frozen=True)
@@ -100,6 +101,12 @@ def strip_audio_prefix(source_name: str) -> str:
     stem = stem.replace("·", "")
     stem = WHITESPACE_PATTERN.sub(" ", stem).strip()
     return stem or "未命名转录稿"
+
+
+def sanitize_filename(name: str) -> str:
+    sanitized = INVALID_FILENAME_CHARS.sub(" ", name)
+    sanitized = WHITESPACE_PATTERN.sub(" ", sanitized).strip()
+    return sanitized or "未命名转录稿"
 
 
 def sanitize_title(title: str) -> str:

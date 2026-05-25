@@ -7,7 +7,7 @@ import shutil
 import uuid
 from typing import Iterable, List
 
-from .config import sanitize_title, strip_audio_prefix
+from .config import sanitize_filename, sanitize_title, strip_audio_prefix
 from .json_utils import parse_articles_payload
 
 
@@ -24,25 +24,31 @@ def resolve_article_output_dir(base_dir: Path, series_name: str, source_dir_name
     series_dir = base_dir / sanitize_title(series_name)
     if not source_dir_name:
         return series_dir
-    return series_dir / sanitize_title(source_dir_name)
+    return series_dir / sanitize_filename(source_dir_name)
 
 
 def derive_issue_number_from_entry(entry: dict) -> str:
+    source_name = str(entry.get("source_name") or "")
+    if source_name:
+        prefix = Path(source_name).stem.split(".", 1)[0].strip()
+        if prefix:
+            return prefix.zfill(2) if len(prefix) <= 2 and prefix.isdigit() else prefix
     sequence = entry.get("sequence")
     if isinstance(sequence, int):
         return str(sequence).zfill(2)
     if isinstance(sequence, str) and sequence.isdigit():
         return sequence.zfill(2)
-    source_name = str(entry.get("source_name") or "")
-    prefix = source_name.split(".", 1)[0].strip()
-    return prefix.zfill(2) if prefix.isdigit() else prefix
+    return "00"
 
 
 def derive_article_source_dir_name(entry: dict) -> str:
+    source_name = str(entry.get("source_name") or "")
+    if source_name:
+        return sanitize_filename(Path(source_name).stem)
     issue_number = derive_issue_number_from_entry(entry)
     display_title = sanitize_title(str(entry.get("display_title") or "").strip())
     if not display_title:
-        display_title = sanitize_title(strip_audio_prefix(str(entry.get("source_name") or "")))
+        display_title = sanitize_title(strip_audio_prefix(source_name))
     display_title = display_title or "未命名转录稿"
     return f"{issue_number}_{display_title}"
 

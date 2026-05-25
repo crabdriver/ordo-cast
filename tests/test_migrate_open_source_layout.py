@@ -62,7 +62,7 @@ class MigrateOpenSourceLayoutTests(unittest.TestCase):
                 result = migrate_workspace_layout(workspace)
 
             new_transcript = document_root / "录音稿" / "天地大道" / "03_关系底牌.md"
-            new_article = document_root / "拆解文章" / "天地大道" / "03_关系底牌" / "03-01_关系底牌.md"
+            new_article = document_root / "拆解文章" / "天地大道" / "20260328. 关系底牌 [abc123]" / "03-01_关系底牌.md"
             new_principles = document_root / "本地配置" / "文章拆解核心原则与心法.md"
 
             self.assertEqual(result["moved_transcripts"], 1)

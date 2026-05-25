@@ -53,9 +53,12 @@ class ScannerAndManifestTests(unittest.TestCase):
                     "20260328. 「人類說明書」关系底牌 [abc123].mp3",
                 ],
             )
-            self.assertEqual(items[0].transcript_path.name, "01_第一讲.md")
+            self.assertEqual(items[0].transcript_path.name, "01. 第一讲.md")
             self.assertEqual(items[2].source_id, "human-manual/关系底牌")
-            self.assertEqual(items[2].transcript_path.name, "03_关系底牌.md")
+            self.assertEqual(
+                items[2].transcript_path.name,
+                "20260328. 「人類說明書」关系底牌 [abc123].md",
+            )
 
     def test_manifest_round_trip_and_pending_detection(self) -> None:
         with TemporaryDirectory() as tmp:

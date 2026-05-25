@@ -695,7 +695,7 @@ class WorkflowTests(unittest.TestCase):
                 manifest=manifest,
                 provider=FakeProvider(),
             )
-            broken_target = transcript_dir / "11_第一课.md"
+            broken_target = transcript_dir / "11. 第一课.md"
             broken_target.mkdir(parents=True)
 
             workflow.run_once()

@@ -21,3 +21,12 @@ __pycache__/
 人类说明书-问道/
 拆解后文章/
 00_文章拆解核心原则与心法.md
+
+# Local development and tool environments
+.venv/
+.venv*/
+.vscode/
+.agents/
+skills-lock.json
+typos_report.md
+
