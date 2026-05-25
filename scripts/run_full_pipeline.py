@@ -29,23 +29,23 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--wait", action="store_true", help="兼容旧参数；总控默认会等待转录完成")
     parser.add_argument("--series", help="只处理指定系列 key，多个用逗号分隔")
     parser.add_argument("--skip-download", action="store_true", help="跳过 YouTube 下载阶段")
-    parser.add_argument("--skip-split", action="store_true", help="[已废弃] 下游 LLM 拆稿已移入 experimental_llm_writer")
+    parser.add_argument("--skip-split", action="store_true", help="[已废弃] 下游 LLM 拆稿已移入独立项目 Ordo Scribe")
     parser.add_argument(
         "--full-auto",
         action="store_true",
-        help="[已废弃] 全自动模式已移入 experimental_llm_writer",
+        help="[已废弃] 全自动模式已移入独立项目 Ordo Scribe",
     )
     parser.add_argument(
         "--allow-pending-review",
         action="store_true",
-        help="[已废弃] 拆稿阶段已移入 experimental_llm_writer",
+        help="[已废弃] 拆稿阶段已移入独立项目 Ordo Scribe",
     )
     parser.add_argument(
         "--expected-articles",
         type=int,
         default=None,
         metavar="N",
-        help="[已废弃] 拆稿篇数参数已移入 experimental_llm_writer",
+        help="[已废弃] 拆稿篇数参数已移入独立项目 Ordo Scribe",
     )
     return parser.parse_args()
 
@@ -106,10 +106,10 @@ def main() -> int:
         print("🎉 核心音视频下载与高精度 ASR 语音转录已成功完成！")
         print("生成的 Markdown 录音稿已保存在您的文稿目录中。")
         print("="*60)
-        print("💡 提示：实验性的 LLM 长稿润色与微信公众号拆稿功能已独立剥离。")
-        print("若需要运行它们，请移步子项目目录进行操作：")
-        print("  python3 experimental_llm_writer/normalize_transcript.py")
-        print("  python3 experimental_llm_writer/split_to_wechat_articles.py")
+        print("💡 提示：更高级的 AI 长稿清洗与微信公众号拆稿功能已完全剥离为独立项目 Ordo Scribe。")
+        print("若需要运行它们，请移步 ordo-scribe 项目目录进行操作：")
+        print("  python3 normalize_transcript.py")
+        print("  python3 split_to_wechat_articles.py")
         print("="*60 + "\n")
     except CalledProcessError as exc:
         return exc.returncode if exc.returncode else 1

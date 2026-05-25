@@ -28,20 +28,19 @@
 │   ├── transcribe_batch.py    # 批量并发火山 ASR 语音转录与状态轮询
 │   ├── run_full_pipeline.py    # 核心一条龙转录入口 (Download -> Transcribe)
 │   └── auto_run_pipeline.py    # 无人值守自动驾驶循环总控
-├── tests/                      # 核心引擎自动化测试集 (80+ 高覆盖度单元测试)
-└── experimental_llm_writer/    # 🧪 实验性 AI 撰稿与拆稿子项目 (未来独立为 Ordo Scribe)
+└── tests/                      # 核心引擎自动化测试集 (80+ 高覆盖度单元测试)
 ```
 
 ---
 
-## 🧪 实验性子项目：`Ordo Scribe` (`experimental_llm_writer/`)
+## 🧪 语义拆稿引擎：`Ordo Scribe`
 
-大模型长稿高维语义清洗与拆稿润色功能已从本核心转录引擎中完全剥离，作为独立的**子项目子模块**，放置于 `experimental_llm_writer/` 目录下。
+大模型长稿高维语义清洗与拆稿润色功能已从本核心转录引擎中完全剥离，并晋升为完全独立的仓库 [Ordo Scribe](https://github.com/crabdriver/Ordo-Scribe.git)。
 
-它包含：
-- **`normalize_transcript.py`**：基于大模型的长稿智能清洗与语气词润色。
-- **`split_to_wechat_articles.py`**：高维语义拆稿引擎，将数万字的长稿智能拆解为符合微信公众号风格的、具备独立逻辑闭环的文章集。
-- 独立的用户提示词设计目录（`prompts/`）与完整的独立测试套件（`tests/`）。
+它专门提供：
+- 基于大模型的长稿智能清洗与语气词润色。
+- 高维语义拆稿引擎，将数万字的长稿智能拆解为符合微信公众号风格的、具备独立逻辑闭环的文章集。
+- 独立的自定义提示词模板（`prompts/`）与完整的自动化测试集。
 
 ---
 
@@ -105,8 +104,9 @@ python3 scripts/auto_run_pipeline.py --series example-series
 # 1. 运行核心转录与下载库测试套件 (80 个测试)
 .venv312/bin/python3 -m unittest discover -s tests
 
-# 2. 运行实验性 AI 撰稿子项目测试套件 (24 个测试)
-.venv312/bin/python3 -m unittest discover -s experimental_llm_writer/tests
+# 2. 运行独立拆稿引擎 Ordo Scribe 的测试套件 (24 个测试)
+# (须在 ordo-scribe 目录下，指定 PYTHONPATH 指向本核心库)
+PYTHONPATH=../ordo-cast ../ordo-cast/.venv312/bin/python3 -m unittest discover -s tests
 ```
 
 ---
@@ -114,7 +114,7 @@ python3 scripts/auto_run_pipeline.py --series example-series
 ## 🏷️ 关于 Ordo Creator Suite
 
 - **`Ordo Cast`** (本项目) ── 把音视频变成干净的 Markdown 录音稿
-- **`Ordo Scribe`** (筹备中) ── 大模型高维语义长稿深度撰稿与智能拆稿器
+- **`Ordo Scribe`** (已独立) ── 大模型高维语义长稿深度撰稿与智能拆稿器
 - **`Ordo Publish`** (开发中) ── 跨社交平台多端本地优先一键分发助手
 
 **在秩序中创作，在高效中分享。**

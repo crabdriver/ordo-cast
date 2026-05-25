@@ -35,8 +35,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--sleep-seconds", type=int, default=60, help="两轮大循环之间等待秒数")
     parser.add_argument("--max-idle-cycles", type=int, default=2, help="连续多少轮无进展后退出为 incomplete")
     parser.add_argument("--skip-download", action="store_true", help="跳过下载阶段")
-    parser.add_argument("--skip-split", action="store_true", help="[已废弃] 下游 LLM 拆稿已移入 experimental_llm_writer")
-    parser.add_argument("--expected-articles", type=int, default=None, metavar="N", help="[已废弃] 下游 LLM 拆稿已移入 experimental_llm_writer")
+    parser.add_argument("--skip-split", action="store_true", help="[已废弃] 下游 LLM 拆稿已移入独立项目 Ordo Scribe")
+    parser.add_argument("--expected-articles", type=int, default=None, metavar="N", help="[已废弃] 下游 LLM 拆稿已移入独立项目 Ordo Scribe")
     return parser.parse_args()
 
 
