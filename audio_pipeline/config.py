@@ -17,7 +17,6 @@ YOUTUBE_ID_SUFFIX_PATTERN = re.compile(r"\s+\[[^\]]+\]$")
 TITLE_KEY_FILTER_PATTERN = re.compile(r"[^\w]+", re.UNICODE)
 LEADING_SEPARATOR_PATTERN = re.compile(r"^[\s\.\-_、·:：]+")
 DOCUMENT_ROOT_ENV = "DOCUMENT_ROOT"
-ARTICLE_PRINCIPLES_PATH_ENV = "ARTICLE_PRINCIPLES_PATH"
 DEFAULT_DOCUMENT_ROOT_NAME = "文稿"
 DEFAULT_ARTICLE_PRINCIPLES_DIRNAME = "本地配置"
 DEFAULT_ARTICLE_PRINCIPLES_FILENAME = "文章拆解核心原则与心法.md"
@@ -124,14 +123,6 @@ def resolve_document_root() -> Path:
     if configured:
         return _expand_environment_path(configured)
     return Path.home() / DEFAULT_DOCUMENT_ROOT_NAME
-
-
-def resolve_article_principles_path(document_root: Path | None = None) -> Path:
-    configured = os.getenv(ARTICLE_PRINCIPLES_PATH_ENV, "").strip()
-    if configured:
-        return _expand_environment_path(configured)
-    root = document_root or resolve_document_root()
-    return root / DEFAULT_ARTICLE_PRINCIPLES_DIRNAME / DEFAULT_ARTICLE_PRINCIPLES_FILENAME
 
 
 def build_title_identity(
