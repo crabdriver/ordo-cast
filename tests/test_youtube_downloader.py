@@ -128,8 +128,8 @@ class YouTubeDownloaderTests(unittest.TestCase):
             command, cwd = calls[0]
             self.assertEqual(cwd, workspace)
             self.assertEqual(command[:3], [sys.executable, "-m", "yt_dlp"])
-            self.assertIn("--extractor-args", command)
-            self.assertIn("youtube:player_client=android", command)
+            self.assertIn("--cookies-from-browser", command)
+            self.assertIn("--js-runtimes", command)
             self.assertIn("--extract-audio", command)
             self.assertIn("--audio-format", command)
             self.assertIn("--download-archive", command)

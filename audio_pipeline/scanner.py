@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import re
 from typing import Iterable, List
 
 from .config import SeriesDefinition, extract_sequence_prefix
@@ -26,17 +27,31 @@ def scan_audio_sources(series_definitions: Iterable[SeriesDefinition]) -> List[A
         if not series.audio_dir.exists():
             continue
 
+        allowed_extensions = {".mp3", ".m4a", ".mp4", ".mov", ".wav", ".webm", ".aac"}
         audio_files = sorted(
             [
                 path
                 for path in series.audio_dir.iterdir()
-                if path.is_file() and path.suffix.lower() == ".mp3" and not path.name.startswith(".")
+                if path.is_file() and path.suffix.lower() in allowed_extensions and not path.name.startswith(".")
             ],
             key=lambda path: (extract_sequence_prefix(path.name) or 10**9, path.name),
         )
 
-        grouped: dict[str, list[tuple[Path, int | None, str]]] = {}
+        # 校验：检查是否存在未下载完的同源视频临时文件 (.part / .ytdl)
+        filtered_audio_files = []
         for path in audio_files:
+            yt_id_match = re.search(r"\[([a-zA-Z0-9_-]{11})\]", path.name)
+            if yt_id_match:
+                yt_id = yt_id_match.group(1)
+                part_files = list(series.audio_dir.glob(f"*{yt_id}*.part"))
+                ytdl_files = list(series.audio_dir.glob(f"*{yt_id}*.ytdl"))
+                if part_files or ytdl_files:
+                    # 说明视频下载尚未真正结束，属于残留不完整文件，必须跳过扫描
+                    continue
+            filtered_audio_files.append(path)
+
+        grouped: dict[str, list[tuple[Path, int | None, str]]] = {}
+        for path in filtered_audio_files:
             identity = series.build_title_identity(path.name)
             grouped.setdefault(identity.title_key, []).append((path, extract_sequence_prefix(path.name), identity.display_title))
 

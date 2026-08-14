@@ -46,12 +46,17 @@ class SeriesDefinition:
     transcript_dir: Path
     prefix_width: int = 2
     title_prefixes: tuple[str, ...] = ()
+    keep_source: bool = False
+    folder_per_file: bool = False
+    min_transcript_chars: int = 0
 
     def build_title_identity(self, source_name: str) -> TitleIdentity:
         return build_title_identity(self.key, self.display_name, source_name, self.title_prefixes)
 
     def build_transcript_path(self, source_name: str) -> Path:
         stem = sanitize_filename(Path(source_name).stem)
+        if self.folder_per_file:
+            return self.transcript_dir / stem / f"{stem}.md"
         return self.transcript_dir / f"{stem}.md"
 
 
@@ -95,11 +100,12 @@ def extract_sequence_prefix(name: str) -> int | None:
 def strip_audio_prefix(source_name: str) -> str:
     stem = Path(source_name).stem
     stem = YOUTUBE_ID_SUFFIX_PATTERN.sub("", stem)
+    original_without_yt = stem
     stem = re.sub(r"^\s*\d+\s*[\.\-_、]*\s*", "", stem)
     stem = TITLE_CLEANUP_PATTERN.sub("", stem)
     stem = stem.replace("·", "")
     stem = WHITESPACE_PATTERN.sub(" ", stem).strip()
-    return stem or "未命名转录稿"
+    return stem or original_without_yt or "未命名转录稿"
 
 
 def sanitize_filename(name: str) -> str:
@@ -178,6 +184,9 @@ def load_series_map(series_map_path: Path) -> List[SeriesDefinition]:
                 transcript_dir=transcript_dir,
                 prefix_width=item.get("prefix_width", 2),
                 title_prefixes=tuple(item.get("title_prefixes", [])),
+                keep_source=item.get("keep_source", False),
+                folder_per_file=item.get("folder_per_file", False),
+                min_transcript_chars=item.get("min_transcript_chars", 300),
             )
         )
     return series
@@ -231,8 +240,24 @@ def _expand_path_value(value: str, workspace_root: Path) -> Path:
         expanded = expanded.replace(token, replacement)
     expanded_path = _expand_environment_path(expanded)
     if expanded_path.is_absolute():
-        return expanded_path
-    return workspace_root / expanded_path
+        resolved = expanded_path
+    else:
+        resolved = workspace_root / expanded_path
+    # Defense-in-depth: verify resolved path is within expected boundaries
+    real_resolved = Path(os.path.realpath(resolved))
+    resolved_str = str(real_resolved) + os.sep
+    workspace_str = str(Path(os.path.realpath(workspace_root))) + os.sep
+    document_str = str(Path(os.path.realpath(document_root))) + os.sep
+    home_str = str(Path(os.path.realpath(Path.home()))) + os.sep
+    if not (
+        resolved_str.startswith(workspace_str)
+        or resolved_str.startswith(document_str)
+        or resolved_str.startswith(home_str)
+    ):
+        raise ValueError(
+            f"路径 '{value}' 解析后位于允许范围之外: {real_resolved}"
+        )
+    return resolved
 
 
 def _expand_environment_path(value: str) -> Path:

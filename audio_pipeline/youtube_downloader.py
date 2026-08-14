@@ -2,10 +2,29 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
 from typing import Callable, Iterable, List
+
+# 从环境变量读取浏览器名，用于 --cookies-from-browser
+# 支持: chrome, firefox, safari, edge, chromium 等
+# 留空则不使用 cookies（可能被 YouTube 反爬拦截）
+YTDLP_COOKIES_BROWSER = os.environ.get("YTDLP_COOKIES_BROWSER", "chrome")
+
+# 确保 yt-dlp 子进程能找到 Node.js（用于 n-challenge EJS solver）
+# macOS 下 Homebrew/nvm/volta 安装的 node 常不在子进程 PATH 里
+_NODE_SEARCH_PATHS = [
+    "/opt/homebrew/bin",          # Apple Silicon Homebrew
+    "/usr/local/bin",             # Intel Homebrew
+    str(Path.home() / ".nvm" / "versions" / "node"),  # nvm（通配目录）
+    str(Path.home() / ".volta" / "bin"),               # volta
+]
+_current_path = os.environ.get("PATH", "")
+_extra = ":".join(p for p in _NODE_SEARCH_PATHS if p not in _current_path)
+if _extra:
+    os.environ["PATH"] = _extra + ":" + _current_path
 
 from audio_pipeline.config import SeriesDefinition
 from audio_pipeline.task_logging import PipelineTaskLogger
@@ -27,10 +46,15 @@ def load_youtube_sources(config_path: Path) -> List[YouTubeSourceDefinition]:
     data = json.loads(config_path.read_text(encoding="utf-8"))
     workspace_root = config_path.parent.parent
     sources: List[YouTubeSourceDefinition] = []
+    workspace_real = str(Path(os.path.realpath(workspace_root))) + os.sep
     for item in data.get("sources", []):
-        archive_file = Path(item["archive_file"])
-        if not archive_file.is_absolute():
-            archive_file = workspace_root / archive_file
+        raw_archive = item["archive_file"]
+        archive_file = workspace_root / raw_archive
+        real_archive_file = Path(os.path.realpath(archive_file))
+        if not str(real_archive_file).startswith(workspace_real):
+            raise ValueError(
+                f"archive_file 路径超出工作区范围: {real_archive_file}"
+            )
         sources.append(
             YouTubeSourceDefinition(
                 series_key=item["series_key"],
@@ -89,14 +113,48 @@ class YouTubeBatchDownloader:
         source.archive_file.parent.mkdir(parents=True, exist_ok=True)
         existing_audio_names = self._list_audio_names(series.audio_dir)
 
+        cookies_browser = os.environ.get("YTDLP_COOKIES_BROWSER", YTDLP_COOKIES_BROWSER).strip()
+
+        # 显式告知 yt-dlp 使用 node 解 YouTube n-challenge（必须显式传入，否则 _js_runtimes 为空）
+        import shutil as _shutil
+        _js_runtime_env = os.environ.get("YTDLP_JS_RUNTIME", "").strip()
+        if not _js_runtime_env:
+            _node_path = _shutil.which("node") or "node"
+            _js_runtime_env = f"node:{_node_path}"
+        js_runtime_args = ["--js-runtimes", _js_runtime_env]
+        
+        # Resolve proxy
+        proxy_to_use = os.environ.get("YTDLP_PROXY")
+        if proxy_to_use is None:
+            has_env_proxy = any(
+                var in os.environ
+                for var in ("all_proxy", "http_proxy", "https_proxy", "ALL_PROXY", "HTTP_PROXY", "HTTPS_PROXY")
+            )
+            if has_env_proxy:
+                proxy_to_use = None
+            else:
+                import socket
+                try:
+                    with socket.create_connection(("127.0.0.1", 7890), timeout=0.2):
+                        proxy_to_use = "http://127.0.0.1:7890"
+                except (socket.timeout, ConnectionRefusedError, OSError):
+                    proxy_to_use = ""
+
         command = [
             sys.executable,
             "-m",
             "yt_dlp",
             "--ignore-errors",
             "--no-abort-on-error",
-            "--extractor-args",
-            "youtube:player_client=android",
+        ]
+        if proxy_to_use is not None:
+            command.extend(["--proxy", proxy_to_use])
+
+        command.extend([
+            *(["--cookies-from-browser", cookies_browser] if cookies_browser else []),
+            *js_runtime_args,
+            "--concurrent-fragments",
+            "5",
             "--extract-audio",
             "--audio-format",
             "mp3",
@@ -110,7 +168,7 @@ class YouTubeBatchDownloader:
             "--paths",
             str(series.audio_dir),
             source.channel_url,
-        ]
+        ])
         self._log(f"[start] {series.key}: {source.channel_url}")
         self.command_runner(command, self.workspace_root)
         renamed = self._finalize_new_downloads(series, existing_audio_names)

@@ -217,6 +217,11 @@ class BatchTranscriptionWorkflow:
             raw_path.write_text(state.text or "", encoding="utf-8")
 
             cleaned = scrub_transcript_text(state.text or "")
+            
+            # 校验：转录稿字数有效完整性校验（防止因视频下载中途断掉导致录音稿残缺，又将其标为完成）
+            if len(cleaned) < source.series.min_transcript_chars:
+                raise ValueError(f"转录文字异常过短 (仅 {len(cleaned)} 字)，可能音频不完整或转录损坏，触发重试流程！")
+
             markdown = format_transcript_markdown(
                 series_name=source.series.display_name,
                 source_name=source.source_path.name,
@@ -400,7 +405,7 @@ class BatchTranscriptionWorkflow:
             transcript_path = Path(current.get("transcript_path") or source.transcript_path)
             has_active_job = bool(current.get("job_id"))
             has_new_audio_version = bool(current.get("submitted_audio_sha1")) and current.get("submitted_audio_sha1") != current.get("audio_sha1")
-            should_delete = transcript_path.is_file() and not has_new_audio_version and (current.get("status") == "completed" or not has_active_job)
+            should_delete = not source.series.keep_source and transcript_path.is_file() and not has_new_audio_version and (current.get("status") == "completed" or not has_active_job)
             if not should_delete:
                 remaining.append(source)
                 continue
